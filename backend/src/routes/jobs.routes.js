@@ -6,16 +6,8 @@ const { skillMatchesText } = require("../utils/skillAliases");
 
 const router = express.Router();
 
-const ALLOWED_MATCH_CATEGORIES = ["Data", "BI", "Tools", "DevOps", "Business"];
-
-
-
-function isMatchCategory(category) {
-  return ALLOWED_MATCH_CATEGORIES.includes(category);
-}
-
 function detectWorkMode(description) {
-  const text = description.toLowerCase();
+  const text = String(description || "").toLowerCase();
 
   if (text.includes("hybrid") || text.includes("hibrid")) {
     return "HYBRID";
@@ -43,7 +35,7 @@ function detectWorkMode(description) {
 }
 
 function detectEmploymentType(description) {
-  const text = description.toLowerCase();
+  const text = String(description || "").toLowerCase();
 
   if (text.includes("internship")) {
     return "INTERNSHIP";
@@ -69,7 +61,7 @@ function detectEmploymentType(description) {
 }
 
 function detectLocation(description) {
-  const text = description.toLowerCase();
+  const text = String(description || "").toLowerCase();
 
   const cityMap = [
     { keywords: ["cluj-napoca", "cluj napoca", "cluj"], value: "Cluj-Napoca" },
@@ -114,24 +106,22 @@ async function analyzeJobData(
   employment_type,
   description
 ) {
-  const text = description.toLowerCase();
+  const text = String(description || "").toLowerCase();
 
   const [skills] = await db.query(
-    "SELECT id, name, category, weight FROM skills"
+    "SELECT id, name, category FROM skills"
   );
 
-  // Folosim doar skilluri din categoriile tehnice pentru matching
-  const detected = skills.filter(
-    (skill) =>
-      isMatchCategory(skill.category) &&
-      skillMatchesText(skill.name, text)
+  const detected = skills.filter((skill) =>
+    skillMatchesText(skill.name, text)
   );
 
-  const detectedIds = detected.map((s) => s.id);
+  const detectedIds = detected.map((s) => Number(s.id));
   const userSkillIds = new Set();
 
   if (detectedIds.length > 0) {
     const placeholders = detectedIds.map(() => "?").join(",");
+
     const [userSkillRows] = await db.query(
       `SELECT skill_id
        FROM user_skills
@@ -140,7 +130,7 @@ async function analyzeJobData(
     );
 
     for (const row of userSkillRows) {
-      userSkillIds.add(row.skill_id);
+      userSkillIds.add(Number(row.skill_id));
     }
   }
 
@@ -149,24 +139,23 @@ async function analyzeJobData(
   const detectedSkills = [];
 
   for (const skill of detected) {
-    const hasSkill = userSkillIds.has(skill.id);
+    const hasSkill = userSkillIds.has(Number(skill.id));
 
     detectedSkills.push({
-      skillId: skill.id,
+      skillId: Number(skill.id),
       name: skill.name,
-      category: skill.category,
-      weight: Number(skill.weight) || 0
+      category: skill.category
     });
 
     if (hasSkill) {
       matches.push({
         skill: skill.name,
-        skillId: skill.id
+        skillId: Number(skill.id)
       });
     } else {
       gaps.push({
         skill: skill.name,
-        skillId: skill.id
+        skillId: Number(skill.id)
       });
     }
   }
@@ -178,10 +167,14 @@ async function analyzeJobData(
     totalSkills === 0 ? 0 : Math.round((matchedSkills / totalSkills) * 100);
 
   const detectedLocation =
-    location && String(location).trim() ? location.trim() : detectLocation(description);
+    location && String(location).trim()
+      ? String(location).trim()
+      : detectLocation(description);
 
   const detectedWorkMode =
-    work_mode && String(work_mode).trim() ? work_mode : detectWorkMode(description);
+    work_mode && String(work_mode).trim()
+      ? work_mode
+      : detectWorkMode(description);
 
   const detectedEmploymentType =
     employment_type && String(employment_type).trim()
@@ -293,7 +286,7 @@ router.post("/", auth, async (req, res) => {
         userId,
         title,
         company || null,
-        location.trim(),
+        String(location).trim(),
         work_mode || null,
         employment_type || null,
         description,
@@ -312,7 +305,7 @@ router.post("/", auth, async (req, res) => {
           `INSERT IGNORE INTO job_skills
             (job_id, skill_id, required_level, detected_by)
            VALUES (?, ?, ?, ?)`,
-          [jobId, skill.skillId, 1, "KEYWORD"]
+          [jobId, Number(skill.skillId), 1, "KEYWORD"]
         );
       }
     }
@@ -421,7 +414,6 @@ router.get("/:id", auth, async (req, res) => {
          s.id AS skill_id,
          s.name,
          s.category,
-         s.weight,
          js.required_level,
          js.detected_by
        FROM job_skills js
@@ -431,11 +423,7 @@ router.get("/:id", auth, async (req, res) => {
       [jobId]
     );
 
-    const filteredRequiredSkills = requiredSkills.filter((skill) =>
-      isMatchCategory(skill.category)
-    );
-
-    const skillIds = filteredRequiredSkills.map((s) => s.skill_id);
+    const skillIds = requiredSkills.map((s) => Number(s.skill_id));
     const userSkillIds = new Set();
 
     if (skillIds.length > 0) {
@@ -449,30 +437,30 @@ router.get("/:id", auth, async (req, res) => {
       );
 
       for (const row of userSkillRows) {
-        userSkillIds.add(row.skill_id);
+        userSkillIds.add(Number(row.skill_id));
       }
     }
 
     const matches = [];
     const gaps = [];
 
-    for (const skill of filteredRequiredSkills) {
-      const hasSkill = userSkillIds.has(skill.skill_id);
+    for (const skill of requiredSkills) {
+      const hasSkill = userSkillIds.has(Number(skill.skill_id));
 
       if (hasSkill) {
         matches.push({
           skill: skill.name,
-          skillId: skill.skill_id
+          skillId: Number(skill.skill_id)
         });
       } else {
         gaps.push({
           skill: skill.name,
-          skillId: skill.skill_id
+          skillId: Number(skill.skill_id)
         });
       }
     }
 
-    const totalSkills = filteredRequiredSkills.length;
+    const totalSkills = requiredSkills.length;
     const matchedSkills = matches.length;
 
     const dynamicScore =
@@ -481,7 +469,7 @@ router.get("/:id", auth, async (req, res) => {
     return res.json({
       ok: true,
       job: jobs[0],
-      requiredSkills: filteredRequiredSkills,
+      requiredSkills,
       dynamicScore,
       matches,
       gaps
@@ -502,6 +490,7 @@ router.get("/:id", auth, async (req, res) => {
 router.patch("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
+
   const {
     company,
     location,

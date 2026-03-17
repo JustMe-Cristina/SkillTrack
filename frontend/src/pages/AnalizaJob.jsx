@@ -139,7 +139,7 @@ export default function AnalizaJob() {
         <div style={styles.nav}>
           <Link to="/competente" style={styles.link}>Competențele mele</Link>
           <Link to="/joburi" style={styles.link}>Joburi urmărite</Link>
-          <Link to="/roadmaps" style={styles.link}>Planuri de dezvoltare</Link>
+          <Link to="/roadmaps" style={styles.link}>Planuri de dezvoltare</Link> 
         </div>
       </div>
 
