@@ -10,12 +10,10 @@ function generateStepsForSkill(skillName) {
     {
       title: `Învață conceptele fundamentale ale competenței ${skillName}`,
       description: `Parcurge noțiunile de bază și principalele concepte asociate competenței ${skillName}.`,
-      estimated_days: 3
     },
     {
       title: `Aplică ${skillName} într-un mini-proiect`,
       description: `Realizează un exercițiu practic sau un mini-proiect pentru a exersa competența ${skillName}.`,
-      estimated_days: 5
     }
   ];
 }
@@ -131,15 +129,14 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       for (const step of steps) {
         await db.query(
           `INSERT INTO roadmap_steps
-            (roadmap_id, skill_id, step_order, title, description, estimated_days, status)
-           VALUES (?, ?, ?, ?, ?, ?, 'NOT_STARTED')`,
+            (roadmap_id, skill_id, step_order, title, description, status)
+           VALUES (?, ?, ?, ?, ?, 'NOT_STARTED')`,
           [
             roadmapId,
             skill.skill_id,
             stepOrder,
             step.title,
             step.description,
-            step.estimated_days
           ]
         );
 
