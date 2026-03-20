@@ -1,8 +1,8 @@
 const express = require("express");
 const db = require("../config/db");
 const auth = require("../middleware/auth.middleware");
-
 const { skillMatchesText } = require("../utils/skillAliases");
+const { logActivity } = require("../utils/activityLogger");
 
 const router = express.Router();
 
@@ -108,8 +108,9 @@ async function analyzeJobData(
 ) {
   const text = String(description || "").toLowerCase();
 
+  // Final: folosim toate skillurile din catalogul hard-skills
   const [skills] = await db.query(
-    "SELECT id, name, category FROM skills"
+    "SELECT id, name, category FROM skills ORDER BY name ASC"
   );
 
   const detected = skills.filter((skill) =>
@@ -229,6 +230,8 @@ router.post("/analyze", auth, async (req, res) => {
       description
     );
 
+    await logActivity(userId, "JOB_ANALYZED", "job", null);
+
     return res.json({
       ok: true,
       ...analysis
@@ -309,6 +312,8 @@ router.post("/", auth, async (req, res) => {
         );
       }
     }
+
+    await logActivity(userId, "JOB_SAVED", "job", jobId);
 
     return res.status(201).json({
       ok: true,

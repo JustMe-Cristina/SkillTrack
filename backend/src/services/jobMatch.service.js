@@ -1,11 +1,5 @@
 const db = require("../config/db");
 
-const ALLOWED_MATCH_CATEGORIES = ["Data", "BI", "Tools", "DevOps", "Business"];
-
-function isMatchCategory(category) {
-  return ALLOWED_MATCH_CATEGORIES.includes(category);
-}
-
 async function recalculateJobsForUser(userId) {
   const [jobs] = await db.query(
     `SELECT id
@@ -38,9 +32,7 @@ async function recalculateJobsForUser(userId) {
       [jobId]
     );
 
-    const filteredRequiredSkills = requiredSkills.filter((skill) =>
-      isMatchCategory(skill.category)
-    );
+    const filteredRequiredSkills = requiredSkills;
 
     const totalSkills = filteredRequiredSkills.length;
 

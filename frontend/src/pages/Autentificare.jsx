@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AppNavbar from "../components/AppNavbar";
 
 export default function Autentificare() {
   const navigate = useNavigate();

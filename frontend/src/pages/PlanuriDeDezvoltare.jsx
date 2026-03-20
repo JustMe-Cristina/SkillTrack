@@ -1,472 +1,577 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { API_URL } from "../services/api";
+import AppLayout from "../components/AppLayout";
 
 export default function PlanuriDeDezvoltare() {
-  const [planuri, setPlanuri] = useState([]);
-  const [joburiSalvate, setJoburiSalvate] = useState([]);
-  const [jobSelectatId, setJobSelectatId] = useState("");
-  const [planSelectat, setPlanSelectat] = useState(null);
-  const [pasi, setPasi] = useState([]);
-  const [mesaj, setMesaj] = useState("");
-  const [seIncarcaPlanuri, setSeIncarcaPlanuri] = useState(false);
-  const [seIncarcaDetalii, setSeIncarcaDetalii] = useState(false);
-  const [seGenereaza, setSeGenereaza] = useState(false);
-
-  const API_BASE = "http://localhost:5050/api";
+  const [roadmaps, setRoadmaps] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [expandedRoadmapId, setExpandedRoadmapId] = useState(null);
+  const [roadmapDetails, setRoadmapDetails] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    incarcaPlanuri();
-    incarcaJoburi();
+    fetchInitialData();
   }, []);
 
-  async function incarcaPlanuri() {
-    const token = localStorage.getItem("token");
-    setSeIncarcaPlanuri(true);
+  async function fetchInitialData() {
+    setLoading(true);
+    setMessage("");
 
     try {
-      const res = await fetch(`${API_BASE}/roadmaps`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setPlanuri(data);
-      } else {
-        setMesaj(data.message || "Eroare la încărcarea planurilor de dezvoltare.");
-      }
+      await Promise.all([fetchRoadmaps(), fetchJobs()]);
     } catch (err) {
       console.error(err);
-      setMesaj("Eroare la încărcarea planurilor de dezvoltare.");
+      setMessage("Eroare la încărcarea datelor.");
     } finally {
-      setSeIncarcaPlanuri(false);
+      setLoading(false);
     }
   }
 
-  async function incarcaJoburi() {
+  async function fetchRoadmaps() {
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(`${API_URL}/api/roadmaps`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const data = await res.json();
+
+    if (data.ok) {
+      setRoadmaps(data.roadmaps || []);
+    } else {
+      setMessage(data.message || data.error || "Nu s-au putut încărca roadmap-urile.");
+    }
+  }
+
+  async function fetchJobs() {
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(`${API_URL}/api/jobs`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const data = await res.json();
+
+    if (data.ok) {
+      setJobs(data.jobs || []);
+    }
+  }
+
+  async function generateRoadmap() {
+    if (!selectedJobId) {
+      setMessage("Selectează un job.");
+      return;
+    }
+
     const token = localStorage.getItem("token");
 
     try {
-      const res = await fetch(`${API_BASE}/jobs`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      setMessage("");
+
+      const res = await fetch(
+        `${API_URL}/api/roadmaps/generate/${selectedJobId}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      const data = await res.json();
+
+      if (data.ok) {
+        setMessage("Roadmap generat cu succes.");
+        await fetchRoadmaps();
+      } else {
+        setMessage(data.message || data.error || "Nu s-a putut genera roadmap-ul.");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Eroare la generarea roadmap-ului.");
+    }
+  }
+
+  async function toggleRoadmapDetails(roadmapId) {
+    if (expandedRoadmapId === roadmapId) {
+      setExpandedRoadmapId(null);
+      return;
+    }
+
+    setExpandedRoadmapId(roadmapId);
+
+    if (roadmapDetails[roadmapId]) return;
+
+    const token = localStorage.getItem("token");
+
+    try {
+      const res = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       const data = await res.json();
 
       if (data.ok) {
-        setJoburiSalvate(data.jobs || []);
+        setRoadmapDetails((prev) => ({
+          ...prev,
+          [roadmapId]: {
+            roadmap: data.roadmap,
+            steps: data.steps || []
+          }
+        }));
       } else {
-        setMesaj("Eroare la încărcarea joburilor.");
+        setMessage(data.message || data.error || "Nu s-au putut încărca detaliile roadmap-ului.");
       }
     } catch (err) {
       console.error(err);
-      setMesaj("Eroare la încărcarea joburilor.");
+      setMessage("Eroare la încărcarea detaliilor roadmap-ului.");
     }
   }
 
-  async function incarcaDetaliiPlan(planId) {
-    const token = localStorage.getItem("token");
-    setSeIncarcaDetalii(true);
-
-    try {
-      const res = await fetch(`${API_BASE}/roadmaps/${planId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setPlanSelectat(data.roadmap);
-        setPasi(data.steps || []);
-      } else {
-        setMesaj(data.message || "Eroare la încărcarea detaliilor planului.");
-      }
-    } catch (err) {
-      console.error(err);
-      setMesaj("Eroare la încărcarea detaliilor planului.");
-    } finally {
-      setSeIncarcaDetalii(false);
-    }
-  }
-
- async function genereazaPlan() {
-  if (!jobSelectatId) {
-    setMesaj("Selectează un job.");
-    return;
-  }
-
-  const token = localStorage.getItem("token");
-  setSeGenereaza(true);
-  setMesaj("");
-
-  try {
-    const res = await fetch(`${API_BASE}/roadmaps/generate/${jobSelectatId}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const data = await res.json();
-
-    if (res.ok) {
-      setMesaj(data.message || "Planul de dezvoltare a fost generat cu succes.");
-
-      await incarcaPlanuri();
-
-      if (data.roadmap_id) {
-        await incarcaDetaliiPlan(data.roadmap_id);
-      }
-    } else {
-      // aici intră cazul când există deja planul
-
-      setMesaj(data.message || "Există deja un plan pentru acest job.");
-
-      if (data.roadmap_id) {
-        await incarcaDetaliiPlan(data.roadmap_id);
-      }
-    }
-  } catch (err) {
-    console.error(err);
-    setMesaj("Eroare la generarea planului de dezvoltare.");
-  } finally {
-    setSeGenereaza(false);
-  }
-}
-
-  async function actualizeazaStatusPas(stepId, status) {
+  async function updateStepStatus(roadmapId, stepId, status) {
     const token = localStorage.getItem("token");
 
     try {
-      const res = await fetch(`${API_BASE}/roadmaps/steps/${stepId}`, {
+      const res = await fetch(`${API_URL}/api/roadmaps/steps/${stepId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status })
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        if (planSelectat?.id) {
-          await incarcaDetaliiPlan(planSelectat.id);
-          await incarcaPlanuri();
+      if (data.ok) {
+        setMessage("Pas actualizat cu succes.");
+
+        // reload roadmap details
+        const detailsRes = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const detailsData = await detailsRes.json();
+
+        if (detailsData.ok) {
+          setRoadmapDetails((prev) => ({
+            ...prev,
+            [roadmapId]: {
+              roadmap: detailsData.roadmap,
+              steps: detailsData.steps || []
+            }
+          }));
         }
+
+        await fetchRoadmaps();
       } else {
-        setMesaj(data.message || "Nu s-a putut actualiza pasul.");
+        setMessage(data.message || data.error || "Nu s-a putut actualiza pasul.");
       }
     } catch (err) {
       console.error(err);
-      setMesaj("Eroare la actualizarea pasului.");
+      setMessage("Eroare la actualizarea pasului.");
     }
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Planuri de dezvoltare</h1>
+    <AppLayout
+      title="Planuri de dezvoltare"
+      subtitle="Generează și urmărește roadmap-urile pentru joburile tale"
+    >
+      {message && <div style={styles.message}>{message}</div>}
 
-        <div style={styles.nav}>
-          <Link to="/analiza" style={styles.link}>
-            Analiza jobului
-          </Link>
-          <Link to="/competente" style={styles.link}>
-            Competențele mele
-          </Link>
-          <Link to="/joburi" style={styles.link}>
-            Joburi urmărite
-          </Link>
-        </div>
-      </div>
+      <div style={styles.card}>
+        <h2 style={styles.sectionTitle}>Generează roadmap</h2>
 
-      <div style={styles.mainGrid}>
-        <div style={styles.sidebarCard}>
-          <h2 style={styles.sectionTitle}>Generează plan de dezvoltare</h2>
-
+        <div style={styles.generateRow}>
           <select
-            value={jobSelectatId}
-            onChange={(e) => setJobSelectatId(e.target.value)}
-            style={styles.input}
+            value={selectedJobId}
+            onChange={(e) => setSelectedJobId(e.target.value)}
+            style={styles.select}
           >
-            <option value="">Selectează un job</option>
-            {joburiSalvate.map((job) => (
+            <option value="">Selectează job</option>
+
+            {jobs.map((job) => (
               <option key={job.id} value={job.id}>
-                {job.title} {job.company ? `- ${job.company}` : ""}
+                {job.title} {job.company ? `(${job.company})` : ""}
               </option>
             ))}
           </select>
 
-          <button
-            onClick={genereazaPlan}
-            style={styles.button}
-            disabled={seGenereaza}
-          >
-            {seGenereaza ? "Se generează..." : "Generează plan de dezvoltare"}
+          <button onClick={generateRoadmap} style={styles.primaryButton}>
+            Generează
           </button>
-
-          {mesaj && <p style={styles.message}>{mesaj}</p>}
-
-          <hr style={styles.divider} />
-
-          <h2 style={styles.sectionTitle}>Planurile mele de dezvoltare</h2>
-
-          {seIncarcaPlanuri ? (
-            <p>Se încarcă...</p>
-          ) : planuri.length === 0 ? (
-            <p>Nu există planuri de dezvoltare încă.</p>
-          ) : (
-            planuri.map((plan) => (
-              <div
-                key={plan.id}
-                style={{
-                  ...styles.planItem,
-                  border:
-                    planSelectat?.id === plan.id
-                      ? "2px solid #111827"
-                      : "1px solid #e5e7eb",
-                }}
-                onClick={() => incarcaDetaliiPlan(plan.id)}
-              >
-                <h3 style={{ margin: "0 0 8px 0" }}>{plan.title}</h3>
-                <p style={styles.smallText}>
-                  <strong>Job:</strong> {plan.job_title}
-                </p>
-                <p style={styles.smallText}>
-                  <strong>Companie:</strong> {plan.company || "-"}
-                </p>
-                <p style={styles.smallText}>
-                  <strong>Stare:</strong> {formatStatus(plan.status)}
-                </p>
-                <p style={styles.smallText}>
-                  <strong>Progres:</strong> {plan.progress}%
-                </p>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div style={styles.contentCard}>
-          {!planSelectat ? (
-            <p>Selectează un plan din stânga.</p>
-          ) : seIncarcaDetalii ? (
-            <p>Se încarcă detaliile planului de dezvoltare...</p>
-          ) : (
-            <>
-              <h2 style={styles.sectionTitle}>{planSelectat.title}</h2>
-
-              <p>
-                <strong>Job:</strong> {planSelectat.job_title}
-              </p>
-              <p>
-                <strong>Stare:</strong> {formatStatus(planSelectat.status)}
-              </p>
-              <p>
-                <strong>Progres:</strong> {planSelectat.progress}%
-              </p>
-
-              <div style={styles.progressBarOuter}>
-                <div
-                  style={{
-                    ...styles.progressBarInner,
-                    width: `${planSelectat.progress || 0}%`,
-                  }}
-                />
-              </div>
-
-              <h3 style={{ marginTop: 24 }}>Pașii planului de dezvoltare</h3>
-
-              {pasi.length === 0 ? (
-                <p>Nu există pași pentru acest plan.</p>
-              ) : (
-                pasi.map((pas) => (
-                  <div
-                    key={pas.id}
-                    style={{
-                      ...styles.stepCard,
-                      borderLeft: getStatusBorder(pas.status),
-                    }}
-                  >
-                    <h4 style={{ marginTop: 0 }}>
-                      {pas.step_order}. {pas.title}
-                    </h4>
-
-                    <p>{pas.description}</p>
-
-                    <p style={styles.smallText}>
-                      <strong>Competență:</strong> {pas.skill_name || "-"}
-                    </p>
-
-                    <div style={styles.statusRow}>
-                      <label>
-                        <strong>Stare:</strong>
-                      </label>
-                      <select
-                        value={pas.status}
-                        onChange={(e) =>
-                          actualizeazaStatusPas(pas.id, e.target.value)
-                        }
-                        style={styles.statusSelect}
-                      >
-                        <option value="NOT_STARTED">Neînceput</option>
-                        <option value="IN_PROGRESS">În curs</option>
-                        <option value="COMPLETED">Finalizat</option>
-                      </select>
-                    </div>
-                  </div>
-                ))
-              )}
-            </>
-          )}
         </div>
       </div>
-    </div>
+
+      {loading ? (
+        <div style={styles.card}>Se încarcă roadmap-urile...</div>
+      ) : roadmaps.length === 0 ? (
+        <div style={styles.card}>
+          <div style={styles.emptyTitle}>Nu există încă roadmap-uri generate.</div>
+          <div style={styles.emptyText}>
+            Selectează un job și generează primul tău plan de dezvoltare.
+          </div>
+        </div>
+      ) : (
+        <div style={styles.roadmapList}>
+          {roadmaps.map((roadmap) => {
+            const details = roadmapDetails[roadmap.id];
+            const isExpanded = expandedRoadmapId === roadmap.id;
+
+            return (
+              <div key={roadmap.id} style={styles.card}>
+                <div style={styles.cardHeader}>
+                  <div>
+                    <h3 style={styles.cardTitle}>{roadmap.title}</h3>
+                    <p style={styles.cardDescription}>
+                      {roadmap.description || "Fără descriere disponibilă."}
+                    </p>
+                  </div>
+
+                  <span style={getStatusBadgeStyle(roadmap.status)}>
+                    {formatStatus(roadmap.status)}
+                  </span>
+                </div>
+
+                <div style={styles.metaGrid}>
+                  <div style={styles.metaCard}>
+                    <div style={styles.metaLabel}>Job</div>
+                    <div style={styles.metaValue}>{roadmap.job_title || "-"}</div>
+                  </div>
+
+                  <div style={styles.metaCard}>
+                    <div style={styles.metaLabel}>Companie</div>
+                    <div style={styles.metaValue}>{roadmap.company || "-"}</div>
+                  </div>
+
+                  <div style={styles.metaCard}>
+                    <div style={styles.metaLabel}>Progres</div>
+                    <div style={styles.metaValue}>{roadmap.progress || 0}%</div>
+                  </div>
+                </div>
+
+                <div style={styles.progressBar}>
+                  <div
+                    style={{
+                      ...styles.progressFill,
+                      width: `${roadmap.progress || 0}%`
+                    }}
+                  />
+                </div>
+
+                <div style={styles.actionsRow}>
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() => toggleRoadmapDetails(roadmap.id)}
+                  >
+                    {isExpanded ? "Ascunde pașii" : "Vezi pașii"}
+                  </button>
+                </div>
+
+                {isExpanded && (
+                  <div style={styles.stepsSection}>
+                    {!details ? (
+                      <div style={styles.loadingSteps}>Se încarcă pașii...</div>
+                    ) : details.steps.length === 0 ? (
+                      <div style={styles.emptyText}>Nu există pași pentru acest roadmap.</div>
+                    ) : (
+                      <div style={styles.stepsList}>
+                        {details.steps.map((step) => (
+                          <div key={step.id} style={styles.stepCard}>
+                            <div style={styles.stepTop}>
+                              <div>
+                                <div style={styles.stepOrder}>Pasul {step.step_order}</div>
+                                <h4 style={styles.stepTitle}>{step.title}</h4>
+                                <p style={styles.stepDescription}>{step.description}</p>
+                              </div>
+
+                              <span style={getStatusBadgeStyle(step.status)}>
+                                {formatStatus(step.status)}
+                              </span>
+                            </div>
+
+                            <div style={styles.stepMeta}>
+                              <span>
+                                <strong>Skill:</strong> {step.skill_name || "-"}
+                              </span>
+                              <span>
+                                <strong>Zile estimate:</strong> {step.estimated_days || "-"}
+                              </span>
+                            </div>
+
+                            <div style={styles.stepActions}>
+                              <button
+                                type="button"
+                                style={styles.secondaryButton}
+                                onClick={() =>
+                                  updateStepStatus(roadmap.id, step.id, "NOT_STARTED")
+                                }
+                              >
+                                Neînceput
+                              </button>
+
+                              <button
+                                type="button"
+                                style={styles.secondaryButton}
+                                onClick={() =>
+                                  updateStepStatus(roadmap.id, step.id, "IN_PROGRESS")
+                                }
+                              >
+                                În progres
+                              </button>
+
+                              <button
+                                type="button"
+                                style={styles.primaryButton}
+                                onClick={() =>
+                                  updateStepStatus(roadmap.id, step.id, "COMPLETED")
+                                }
+                              >
+                                Finalizat
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </AppLayout>
   );
 }
 
 function formatStatus(status) {
   if (status === "NOT_STARTED") return "Neînceput";
-  if (status === "IN_PROGRESS") return "În curs";
+  if (status === "IN_PROGRESS") return "În progres";
   if (status === "COMPLETED") return "Finalizat";
-  return status;
+  return status || "-";
 }
 
-function getStatusBorder(status) {
-  if (status === "COMPLETED") return "5px solid #16a34a";
-  if (status === "IN_PROGRESS") return "5px solid #f59e0b";
-  return "5px solid #9ca3af";
+function getStatusBadgeStyle(status) {
+  const base = {
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    whiteSpace: "nowrap"
+  };
+
+  if (status === "NOT_STARTED") {
+    return {
+      ...base,
+      background: "#f3f4f6",
+      color: "#374151"
+    };
+  }
+
+  if (status === "IN_PROGRESS") {
+    return {
+      ...base,
+      background: "#dbeafe",
+      color: "#1d4ed8"
+    };
+  }
+
+  if (status === "COMPLETED") {
+    return {
+      ...base,
+      background: "#dcfce7",
+      color: "#15803d"
+    };
+  }
+
+  return {
+    ...base,
+    background: "#e5e7eb",
+    color: "#111827"
+  };
 }
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: "#f4f6f9",
-    padding: 24,
-    fontFamily: "Inter, sans-serif",
+  message: {
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    background: "#ffffff",
+    color: "#374151",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
   },
-  header: {
-    maxWidth: 1300,
-    margin: "0 auto 20px auto",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    flexWrap: "wrap",
-  },
-  title: {
-    margin: 0,
-    color: "#111827",
-  },
-  nav: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  link: {
-    textDecoration: "none",
-    color: "#111827",
+  card: {
     background: "white",
-    padding: "10px 14px",
-    borderRadius: 8,
-    fontWeight: 500,
-  },
-  mainGrid: {
-    maxWidth: 1300,
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "340px 1fr",
-    gap: 20,
-  },
-  sidebarCard: {
-    background: "white",
-    padding: 20,
     borderRadius: 16,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-    height: "fit-content",
-  },
-  contentCard: {
-    background: "white",
     padding: 24,
-    borderRadius: 16,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-    minHeight: 500,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+    marginBottom: 20
   },
   sectionTitle: {
     marginTop: 0,
-    color: "#111827",
+    marginBottom: 16,
+    color: "#111827"
   },
-  input: {
-    width: "100%",
+  generateRow: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap"
+  },
+  select: {
     padding: 12,
     borderRadius: 8,
     border: "1px solid #d1d5db",
-    fontSize: 14,
-    marginBottom: 12,
+    minWidth: 280
   },
-  button: {
-    width: "100%",
-    padding: 12,
+  roadmapList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 20
+  },
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    flexWrap: "wrap"
+  },
+  cardTitle: {
+    marginTop: 0,
+    marginBottom: 10,
+    color: "#111827"
+  },
+  cardDescription: {
+    margin: 0,
+    color: "#4b5563",
+    lineHeight: 1.7
+  },
+  metaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 14,
+    marginTop: 20
+  },
+  metaCard: {
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    padding: 14
+  },
+  metaLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: 1
+  },
+  metaValue: {
+    marginTop: 8,
+    color: "#111827",
+    fontWeight: 700
+  },
+  progressBar: {
+    height: 12,
+    background: "#e5e7eb",
+    borderRadius: 999,
+    overflow: "hidden",
+    marginTop: 18
+  },
+  progressFill: {
+    height: "100%",
+    background: "#111827",
+    borderRadius: 999,
+    transition: "width 0.3s ease"
+  },
+  actionsRow: {
+    marginTop: 18,
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap"
+  },
+  stepsSection: {
+    marginTop: 20,
+    borderTop: "1px solid #e5e7eb",
+    paddingTop: 20
+  },
+  loadingSteps: {
+    color: "#6b7280"
+  },
+  stepsList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 16
+  },
+  stepCard: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 14,
+    padding: 18,
+    background: "#fafafa"
+  },
+  stepTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    flexWrap: "wrap"
+  },
+  stepOrder: {
+    color: "#6b7280",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8
+  },
+  stepTitle: {
+    margin: "0 0 8px 0",
+    color: "#111827"
+  },
+  stepDescription: {
+    margin: 0,
+    color: "#4b5563",
+    lineHeight: 1.7
+  },
+  stepMeta: {
+    display: "flex",
+    gap: 16,
+    flexWrap: "wrap",
+    marginTop: 14,
+    color: "#374151",
+    fontSize: 14
+  },
+  stepActions: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 16
+  },
+  primaryButton: {
+    padding: "10px 14px",
     borderRadius: 8,
     border: "none",
     background: "#111827",
     color: "white",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 600
   },
-  message: {
-    marginTop: 12,
-    color: "#4b5563",
-  },
-  divider: {
-    margin: "20px 0",
-  },
-  planItem: {
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 12,
-    cursor: "pointer",
-    background: "#f9fafb",
-  },
-  stepCard: {
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-    background: "#f9fafb",
-  },
-  smallText: {
-    fontSize: 14,
-    color: "#374151",
-    margin: "4px 0",
-  },
-  statusRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 12,
-  },
-  statusSelect: {
-    padding: 8,
+  secondaryButton: {
+    padding: "10px 14px",
     borderRadius: 8,
     border: "1px solid #d1d5db",
+    background: "white",
+    color: "#111827",
+    cursor: "pointer",
+    fontWeight: 600
   },
-  progressBarOuter: {
-    width: "100%",
-    height: 12,
-    background: "#e5e7eb",
-    borderRadius: 999,
-    overflow: "hidden",
-    marginTop: 10,
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: "#111827",
+    marginBottom: 10
   },
-  progressBarInner: {
-    height: "100%",
-    background: "#111827",
-  },
+  emptyText: {
+    color: "#6b7280",
+    lineHeight: 1.7
+  }
 };

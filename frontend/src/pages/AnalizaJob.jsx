@@ -1,296 +1,264 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { API_URL } from "../services/api";
+import AppLayout from "../components/AppLayout";
 
 export default function AnalizaJob() {
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [location, setLocation] = useState("");
-  const [workMode, setWorkMode] = useState("");
-  const [employmentType, setEmploymentType] = useState("");
   const [description, setDescription] = useState("");
-  const [result, setResult] = useState(null);
+
+  const [analysis, setAnalysis] = useState(null);
   const [message, setMessage] = useState("");
+  const [loadingAnalyze, setLoadingAnalyze] = useState(false);
+  const [loadingSave, setLoadingSave] = useState(false);
 
   async function handleAnalyze(e) {
     e.preventDefault();
-    setMessage("Se analizează jobul...");
-    setResult(null);
+    setMessage("");
+    setAnalysis(null);
 
-    const token = localStorage.getItem("token");
-
-    try {
-      const res = await fetch("http://localhost:5050/api/jobs/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          title,
-          company,
-          location,
-          work_mode: workMode,
-          employment_type: employmentType,
-          description
-        })
-      });
-
-      const data = await res.json();
-
-      if (data.ok) {
-        setResult(data);
-        setMessage("");
-
-        if (data.location) {
-          setLocation(data.location);
-        }
-
-        if (data.work_mode) {
-          setWorkMode(data.work_mode);
-        }
-
-        if (data.employment_type) {
-          setEmploymentType(data.employment_type);
-        }
-      } else {
-        setMessage(traducereMesaj(data.error));
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage("Eroare la analiză.");
-    }
-  }
-
-  async function handleSaveJob() {
-    if (!result) return;
-
-    if (!location.trim()) {
-      setMessage("Locația este obligatorie.");
+    if (!title.trim() || !description.trim()) {
+      setMessage("Completează titlul și descrierea jobului.");
       return;
     }
 
     const token = localStorage.getItem("token");
 
     try {
-      const res = await fetch("http://localhost:5050/api/jobs", {
+      setLoadingAnalyze(true);
+
+      const res = await fetch(`${API_URL}/api/jobs/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          title,
-          company,
-          location,
-          work_mode: workMode,
-          employment_type: employmentType,
-          description,
-          score: result.score,
-          detectedSkills: result.detectedSkills
+          title: title.trim(),
+          company: company.trim(),
+          location: location.trim(),
+          description: description.trim()
         })
       });
 
       const data = await res.json();
 
       if (data.ok) {
-        setMessage("Jobul a fost salvat.");
-        setResult(null);
-        setTitle("");
-        setCompany("");
-        setLocation("");
-        setWorkMode("");
-        setEmploymentType("");
-        setDescription("");
+        setAnalysis(data);
       } else {
-        setMessage(traducereMesaj(data.error));
+        setMessage(data.error || "Nu s-a putut analiza jobul.");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Eroare la analiza jobului.");
+    } finally {
+      setLoadingAnalyze(false);
+    }
+  }
+
+  async function handleSaveJob() {
+    if (!analysis) return;
+
+    const token = localStorage.getItem("token");
+
+    try {
+      setLoadingSave(true);
+      setMessage("");
+
+      const res = await fetch(`${API_URL}/api/jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: analysis.title,
+          company: analysis.company,
+          location: analysis.location,
+          work_mode: analysis.work_mode,
+          employment_type: analysis.employment_type,
+          description: analysis.description,
+          score: analysis.score,
+          detectedSkills: analysis.detectedSkills,
+          status: "SALVAT"
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        setMessage("Jobul a fost salvat cu succes.");
+      } else {
+        setMessage(data.error || "Nu s-a putut salva jobul.");
       }
     } catch (err) {
       console.error(err);
       setMessage("Eroare la salvarea jobului.");
+    } finally {
+      setLoadingSave(false);
     }
   }
 
-  function traducereMesaj(msg) {
-    if (!msg) return "A apărut o eroare.";
-    if (msg === "Missing title/description") return "Titlul sau descrierea lipsesc.";
-    if (msg === "Missing location") return "Locația lipsește.";
-    if (msg === "Server error") return "Eroare de server.";
-    return msg;
-  }
-
-  function formatWorkMode(mode) {
-    if (mode === "REMOTE") return "Remote";
-    if (mode === "HYBRID") return "Hibrid";
-    if (mode === "ONSITE") return "La fața locului";
-    return mode || "-";
-  }
-
-  function formatEmploymentType(type) {
-    if (type === "FULL_TIME") return "Normă întreagă";
-    if (type === "PART_TIME") return "Normă fracționată";
-    if (type === "INTERNSHIP") return "Internship";
-    return type || "-";
-  }
-
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Analiza jobului</h1>
-        <div style={styles.nav}>
-          <Link to="/competente" style={styles.link}>Competențele mele</Link>
-          <Link to="/joburi" style={styles.link}>Joburi urmărite</Link>
-          <Link to="/roadmaps" style={styles.link}>Planuri de dezvoltare</Link> 
+    <AppLayout
+      title="Analiză job"
+      subtitle="Analizează un job și vezi rapid gradul de potrivire cu profilul tău"
+    >
+      {message && <div style={styles.message}>{message}</div>}
+
+      <div style={styles.grid}>
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Date job</h2>
+
+          <form onSubmit={handleAnalyze} style={styles.form}>
+            <input
+              style={styles.input}
+              placeholder="Titlul jobului"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+
+            <input
+              style={styles.input}
+              placeholder="Companie"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            />
+
+            <input
+              style={styles.input}
+              placeholder="Locație (opțional)"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+
+            <textarea
+              style={styles.textarea}
+              placeholder="Descrierea jobului"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+
+            <button type="submit" style={styles.button} disabled={loadingAnalyze}>
+              {loadingAnalyze ? "Se analizează..." : "Analizează jobul"}
+            </button>
+          </form>
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Rezultat analiză</h2>
+
+          {!analysis ? (
+            <div style={styles.placeholder}>
+              Completează formularul și apasă pe „Analizează jobul”.
+            </div>
+          ) : (
+            <>
+              <div style={styles.scoreBox}>
+                <div style={styles.scoreLabel}>Scor de potrivire</div>
+                <div style={styles.scoreValue}>{analysis.score}%</div>
+              </div>
+
+              <div style={styles.metaGrid}>
+                <div style={styles.metaCard}>
+                  <div style={styles.metaTitle}>Locație</div>
+                  <div style={styles.metaValue}>{analysis.location || "-"}</div>
+                </div>
+
+                <div style={styles.metaCard}>
+                  <div style={styles.metaTitle}>Mod de lucru</div>
+                  <div style={styles.metaValue}>{analysis.work_mode || "-"}</div>
+                </div>
+
+                <div style={styles.metaCard}>
+                  <div style={styles.metaTitle}>Tip angajare</div>
+                  <div style={styles.metaValue}>{analysis.employment_type || "-"}</div>
+                </div>
+              </div>
+
+              <div style={styles.separator} />
+
+              <div style={styles.columns}>
+                <div>
+                  <h3 style={styles.subTitle}>Competențe de dezvoltat</h3>
+
+                  {analysis.gaps?.length > 0 ? (
+                    <div style={styles.tags}>
+                      {analysis.gaps.map((item) => (
+                        <span key={item.skillId} style={styles.gapTag}>
+                          {item.skill}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyText}>
+                      Nu există competențe de dezvoltat.
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3 style={styles.subTitle}>Competențe acoperite</h3>
+
+                  {analysis.matches?.length > 0 ? (
+                    <div style={styles.tags}>
+                      {analysis.matches.map((item) => (
+                        <span key={item.skillId} style={styles.matchTag}>
+                          {item.skill}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={styles.emptyText}>
+                      Nu există competențe acoperite.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={styles.separator} />
+
+              <button
+                type="button"
+                style={styles.button}
+                onClick={handleSaveJob}
+                disabled={loadingSave}
+              >
+                {loadingSave ? "Se salvează..." : "Salvează jobul"}
+              </button>
+            </>
+          )}
         </div>
       </div>
-
-      <div style={styles.card}>
-        <form onSubmit={handleAnalyze} style={styles.form}>
-          <input
-            style={styles.input}
-            placeholder="Titlul jobului"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-
-          <input
-            style={styles.input}
-            placeholder="Compania"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-          />
-
-          <input
-            style={styles.input}
-            placeholder="Locație"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            required
-          />
-
-          <select
-            style={styles.input}
-            value={workMode}
-            onChange={(e) => setWorkMode(e.target.value)}
-          >
-            <option value="">Mod de lucru</option>
-            <option value="REMOTE">Remote</option>
-            <option value="HYBRID">Hibrid</option>
-            <option value="ONSITE">La fața locului</option>
-          </select>
-
-          <select
-            style={styles.input}
-            value={employmentType}
-            onChange={(e) => setEmploymentType(e.target.value)}
-          >
-            <option value="">Tip angajare</option>
-            <option value="FULL_TIME">Normă întreagă</option>
-            <option value="PART_TIME">Normă fracționată</option>
-            <option value="INTERNSHIP">Internship</option>
-          </select>
-
-          <textarea
-            style={styles.textarea}
-            placeholder="Introdu descrierea jobului..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-
-          <button type="submit" style={styles.button}>
-            Analizează
-          </button>
-        </form>
-
-        {message && <div style={styles.message}>{message}</div>}
-
-        {result && (
-          <div style={styles.result}>
-            <h2 style={styles.score}>Scor de potrivire: {result.score ?? 0}%</h2>
-
-            <div style={styles.infoBox}>
-              <p style={styles.infoText}>
-                <strong>Locație:</strong> {location || "-"}
-              </p>
-              <p style={styles.infoText}>
-                <strong>Mod de lucru:</strong> {formatWorkMode(workMode)}
-              </p>
-              <p style={styles.infoText}>
-                <strong>Tip angajare:</strong> {formatEmploymentType(employmentType)}
-              </p>
-            </div>
-
-            <h3>Competențe de dezvoltat</h3>
-            {(result.gaps || []).length === 0 ? (
-              <p>Nu există competențe de dezvoltat.</p>
-            ) : (
-              <ul>
-                {(result.gaps || []).map((g, i) => (
-                  <li key={i}>{g.skill}</li>
-                ))}
-              </ul>
-            )}
-
-            <h3>Competențe acoperite</h3>
-            {(result.matches || []).length === 0 ? (
-              <p>Nu există competențe acoperite.</p>
-            ) : (
-              <ul>
-                {(result.matches || []).map((m, i) => (
-                  <li key={i}>{m.skill}</li>
-                ))}
-              </ul>
-            )}
-
-            <button type="button" style={styles.button} onClick={handleSaveJob}>
-              Salvează jobul
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+    </AppLayout>
   );
 }
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: "#f4f6f9",
-    padding: 24,
-    fontFamily: "Inter, sans-serif"
+  message: {
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    background: "#ffffff",
+    color: "#374151",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
   },
-  header: {
-    maxWidth: 900,
-    margin: "0 auto 20px auto",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    flexWrap: "wrap"
-  },
-  title: {
-    margin: 0,
-    color: "#111827"
-  },
-  nav: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap"
-  },
-  link: {
-    textDecoration: "none",
-    color: "#111827",
-    background: "white",
-    padding: "10px 14px",
-    borderRadius: 8,
-    fontWeight: 500
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 20
   },
   card: {
-    maxWidth: 900,
-    margin: "0 auto",
     background: "white",
-    padding: 24,
     borderRadius: 16,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)"
+    padding: 24,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
+  },
+  sectionTitle: {
+    marginTop: 0,
+    marginBottom: 16,
+    color: "#111827"
   },
   form: {
     display: "flex",
@@ -304,12 +272,13 @@ const styles = {
     fontSize: 14
   },
   textarea: {
-    minHeight: 140,
+    minHeight: 220,
+    resize: "vertical",
     padding: 12,
     borderRadius: 8,
     border: "1px solid #d1d5db",
     fontSize: 14,
-    resize: "vertical"
+    fontFamily: "Inter, sans-serif"
   },
   button: {
     padding: 12,
@@ -320,28 +289,88 @@ const styles = {
     cursor: "pointer",
     fontWeight: 600
   },
-  message: {
-    marginTop: 16,
-    color: "#4b5563"
+  placeholder: {
+    color: "#6b7280",
+    lineHeight: 1.7
   },
-  result: {
-    marginTop: 24,
-    padding: 20,
+  scoreBox: {
+    padding: 16,
+    borderRadius: 14,
     background: "#f9fafb",
-    borderRadius: 12
-  },
-  score: {
-    marginTop: 0
-  },
-  infoBox: {
-    marginBottom: 20,
-    padding: 14,
-    background: "#ffffff",
     border: "1px solid #e5e7eb",
-    borderRadius: 10
+    marginBottom: 18
   },
-  infoText: {
-    margin: "6px 0",
-    color: "#374151"
+  scoreLabel: {
+    fontSize: 13,
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: 1
+  },
+  scoreValue: {
+    marginTop: 8,
+    fontSize: 36,
+    fontWeight: 800,
+    color: "#111827"
+  },
+  metaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 12
+  },
+  metaCard: {
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    padding: 14
+  },
+  metaTitle: {
+    fontSize: 12,
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: 1
+  },
+  metaValue: {
+    marginTop: 6,
+    color: "#111827",
+    fontWeight: 600
+  },
+  separator: {
+    height: 1,
+    background: "#e5e7eb",
+    margin: "20px 0"
+  },
+  columns: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 20
+  },
+  subTitle: {
+    marginTop: 0,
+    marginBottom: 12,
+    color: "#111827"
+  },
+  tags: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  gapTag: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    background: "#fee2e2",
+    color: "#991b1b",
+    fontWeight: 600,
+    fontSize: 14
+  },
+  matchTag: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    background: "#dcfce7",
+    color: "#166534",
+    fontWeight: 600,
+    fontSize: 14
+  },
+  emptyText: {
+    color: "#6b7280"
   }
 };

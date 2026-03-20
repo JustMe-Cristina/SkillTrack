@@ -3,6 +3,7 @@ const db = require("../config/db");
 const auth = require("../middleware/auth.middleware");
 
 const { recalculateJobsForUser } = require("../services/jobMatch.service");
+const { logActivity } = require("../utils/activityLogger");
 
 const router = express.Router();
 
@@ -15,7 +16,13 @@ router.get("/", auth, async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      `SELECT us.skill_id, us.level, us.confidence, s.name, s.category, s.weight
+      `SELECT
+         us.skill_id,
+         us.level,
+         us.confidence,
+         s.name,
+         s.category,
+         s.weight
        FROM user_skills us
        JOIN skills s ON s.id = us.skill_id
        WHERE us.user_id = ?
@@ -46,29 +53,52 @@ router.post("/import-from-cv", auth, async (req, res) => {
   const { skills } = req.body;
 
   if (!Array.isArray(skills) || skills.length === 0) {
-    return res.status(400).json({ ok: false, error: "No skills provided" });
+    return res.status(400).json({
+      ok: false,
+      error: "No skills provided"
+    });
   }
 
   try {
     let addedCount = 0;
 
-    for (const skillId of skills) {
+    for (const rawSkillId of skills) {
+      const skillId = Number(rawSkillId);
+
+      if (!Number.isFinite(skillId)) {
+        continue;
+      }
+
       try {
         await db.query(
           `INSERT INTO user_skills (user_id, skill_id, level, confidence)
            VALUES (?, ?, ?, ?)`,
           [userId, skillId, 1, 3]
         );
-        addedCount++;
+
+        addedCount += 1;
+
+        await logActivity(userId, "SKILL_ADDED", "skill", skillId);
       } catch (err) {
-        if (err.code !== "ER_DUP_ENTRY") throw err;
+        if (err.code !== "ER_DUP_ENTRY") {
+          throw err;
+        }
       }
     }
 
-    return res.json({ ok: true, message: "Skills imported", addedCount });
+    await recalculateJobsForUser(userId);
+
+    return res.json({
+      ok: true,
+      message: "Skills imported",
+      addedCount
+    });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    console.error("IMPORT USER SKILLS FROM CV ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Server error"
+    });
   }
 });
 
@@ -80,18 +110,21 @@ router.post("/", auth, async (req, res) => {
   const userId = req.user.userId;
   const { skillId, level, confidence } = req.body;
 
-  if (!skillId) {
+  const numericSkillId = Number(skillId);
+
+  if (!Number.isFinite(numericSkillId)) {
     return res.status(400).json({
       ok: false,
-      error: "Missing skillId"
+      error: "Missing or invalid skillId"
     });
   }
 
   try {
     const [existing] = await db.query(
-      `SELECT * FROM user_skills
+      `SELECT *
+       FROM user_skills
        WHERE user_id = ? AND skill_id = ?`,
-      [userId, skillId]
+      [userId, numericSkillId]
     );
 
     if (existing.length > 0) {
@@ -104,10 +137,11 @@ router.post("/", auth, async (req, res) => {
     await db.query(
       `INSERT INTO user_skills (user_id, skill_id, level, confidence)
        VALUES (?, ?, ?, ?)`,
-      [userId, skillId, level || 1, confidence || 3]
+      [userId, numericSkillId, level || 1, confidence || 3]
     );
 
     await recalculateJobsForUser(userId);
+    await logActivity(userId, "SKILL_ADDED", "skill", numericSkillId);
 
     return res.status(201).json({
       ok: true,
@@ -176,6 +210,7 @@ router.patch("/:skillId", auth, async (req, res) => {
     }
 
     await recalculateJobsForUser(userId);
+    await logActivity(userId, "SKILL_UPDATED", "skill", skillId);
 
     return res.json({
       ok: true,
@@ -220,6 +255,7 @@ router.delete("/:skillId", auth, async (req, res) => {
     }
 
     await recalculateJobsForUser(userId);
+    await logActivity(userId, "SKILL_DELETED", "skill", skillId);
 
     return res.json({
       ok: true,

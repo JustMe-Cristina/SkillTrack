@@ -10,6 +10,7 @@ const userSkillsRoutes = require("./routes/userSkills.routes");
 const skillsRoutes = require("./routes/skills.routes");
 const cvRoutes = require("./routes/cv.routes");
 const roadmapsRoutes = require("./routes/roadmaps.routes");
+const analyticsRoutes = require("./routes/analytics.routes");
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use("/api/user-skills", userSkillsRoutes);
 app.use("/api/skills", skillsRoutes);
 app.use("/api/cv", cvRoutes);
 app.use("/api/roadmaps", roadmapsRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({ ok: true, message: "SkillTrack API running" });

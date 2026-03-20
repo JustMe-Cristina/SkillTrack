@@ -1,7 +1,6 @@
 import { API_URL } from "../services/api";
-import { useEffect, useMemo, useState } from "react"; // am adăugat useMemo pentru a filtra competențele deja existente ca să nu mai apară în dropdown și să evităm duplicatele.
-
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import AppLayout from "../components/AppLayout";
 
 export default function CompetenteleMele() {
   const [mySkills, setMySkills] = useState([]);
@@ -23,7 +22,7 @@ export default function CompetenteleMele() {
   const availableSkills = useMemo(() => {
     return catalogSkills.filter(
       (catalogSkill) =>
-        !mySkills.some((mySkill) => mySkill.skill_id === catalogSkill.id),
+        !mySkills.some((mySkill) => Number(mySkill.skill_id) === Number(catalogSkill.id))
     );
   }, [catalogSkills, mySkills]);
 
@@ -33,8 +32,8 @@ export default function CompetenteleMele() {
     try {
       const res = await fetch(`${API_URL}/api/user-skills`, {
         headers: {
-          Authorization: `Bearer ${token}`,
-        },
+          Authorization: `Bearer ${token}`
+        }
       });
 
       const data = await res.json();
@@ -56,8 +55,8 @@ export default function CompetenteleMele() {
     try {
       const res = await fetch(`${API_URL}/api/skills`, {
         headers: {
-          Authorization: `Bearer ${token}`,
-        },
+          Authorization: `Bearer ${token}`
+        }
       });
 
       const data = await res.json();
@@ -65,9 +64,7 @@ export default function CompetenteleMele() {
       if (data.ok) {
         setCatalogSkills(data.skills || []);
       } else {
-        setMessage(
-          data.error || "Nu s-a putut încărca catalogul de competențe.",
-        );
+        setMessage(data.error || "Nu s-a putut încărca catalogul.");
       }
     } catch (err) {
       console.error(err);
@@ -77,8 +74,6 @@ export default function CompetenteleMele() {
 
   async function handleAddSkill(e) {
     e.preventDefault();
-
-    // resetăm mesajul la începutul fiecărei acțiuni
     setMessage("");
 
     if (!selectedSkillId) {
@@ -93,13 +88,13 @@ export default function CompetenteleMele() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           skillId: Number(selectedSkillId),
           level: Number(selectedLevel),
-          confidence: 3,
-        }),
+          confidence: 3
+        })
       });
 
       const data = await res.json();
@@ -111,13 +106,12 @@ export default function CompetenteleMele() {
 
         await fetchMySkills();
 
-        // dacă skillul tocmai adăugat exista și în detectedSkills, îl marcăm ca deja adăugat
         setDetectedSkills((prev) =>
           prev.map((skill) =>
-            skill.skillId === Number(selectedSkillId)
+            Number(skill.skillId) === Number(selectedSkillId)
               ? { ...skill, isNew: false }
-              : skill,
-          ),
+              : skill
+          )
         );
       } else {
         setMessage(data.error || "Nu s-a putut adăuga competența.");
@@ -129,7 +123,6 @@ export default function CompetenteleMele() {
   }
 
   async function handleUploadCV() {
-    // reset mesaj înainte de acțiune
     setMessage("");
 
     if (!cvFile) {
@@ -145,16 +138,15 @@ export default function CompetenteleMele() {
       const res = await fetch(`${API_URL}/api/cv/extract`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
-        body: formData,
+        body: formData
       });
 
       const data = await res.json();
 
       if (data.ok) {
         setDetectedSkills(data.detectedSkills || []);
-        // mesaj de succes dup analiză
         setMessage("CV-ul a fost analizat cu succes.");
       } else {
         setMessage(data.error || "Nu s-a putut analiza CV-ul.");
@@ -167,6 +159,7 @@ export default function CompetenteleMele() {
 
   async function addSkillFromCV(skillId) {
     setMessage("");
+
     const token = localStorage.getItem("token");
 
     try {
@@ -174,24 +167,28 @@ export default function CompetenteleMele() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          skillId,
+          skillId: Number(skillId),
           level: 2,
-          confidence: 2,
-        }),
+          confidence: 2
+        })
       });
 
       const data = await res.json();
 
       if (data.ok) {
-        await fetchMySkills(); // actualizare vizuală imediată în lista detectată din CV
+        await fetchMySkills();
+
         setDetectedSkills((prev) =>
           prev.map((skill) =>
-            skill.skillId === skillId ? { ...skill, isNew: false } : skill,
-          ),
+            Number(skill.skillId) === Number(skillId)
+              ? { ...skill, isNew: false }
+              : skill
+          )
         );
+
         setMessage("Competența a fost adăugată din CV.");
       } else {
         setMessage(data.error || "Nu s-a putut adăuga competența din CV.");
@@ -204,19 +201,21 @@ export default function CompetenteleMele() {
 
   async function updateSkillLevel(skillId, level) {
     setMessage("");
+
     const token = localStorage.getItem("token");
 
     try {
-      await fetch(`${API_URL}/api/user-skills/${skillId}`, {
+      const res = await fetch(`${API_URL}/api/user-skills/${skillId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          level: Number(level),
-        }),
+          level: Number(level)
+        })
       });
+
       const data = await res.json();
 
       if (data.ok) {
@@ -227,13 +226,13 @@ export default function CompetenteleMele() {
       }
     } catch (err) {
       console.error(err);
-      setMessage("Eroare la actualizarea nivelului competenței.");
+      setMessage("Eroare la actualizarea nivelului.");
     }
   }
 
   async function deleteSkill(skillId) {
     const confirmDelete = window.confirm(
-      "Sigur vrei să ștergi această competență?",
+      "Sigur vrei să ștergi această competență?"
     );
 
     if (!confirmDelete) return;
@@ -243,69 +242,45 @@ export default function CompetenteleMele() {
     const token = localStorage.getItem("token");
 
     try {
-      await fetch(
-        `${API_URL}/api/user-skills/${skillId}`,
-
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
+      const res = await fetch(`${API_URL}/api/user-skills/${skillId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
 
       const data = await res.json();
 
       if (data.ok) {
         await fetchMySkills();
 
-        // dacă skillul era și în lista detectată, îl marcăm iar ca nou
-        // doar dacă vrei să permită readăugare rapidă din CV
         setDetectedSkills((prev) =>
           prev.map((skill) =>
-            skill.skillId === skillId
+            Number(skill.skillId) === Number(skillId)
               ? { ...skill, isNew: true }
               : skill
           )
         );
+
         setMessage("Competența a fost ștearsă.");
       } else {
         setMessage(data.error || "Nu s-a putut șterge competența.");
       }
     } catch (err) {
       console.error(err);
-      setMessage("Competența a fost ștearsă.");
+      setMessage("Eroare la ștergerea competenței.");
     }
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Competențele mele</h1>
-
-        <div style={styles.nav}>
-          <Link to="/analiza" style={styles.link}>
-            Analiză job
-          </Link>
-
-          <Link to="/joburi" style={styles.link}>
-            Joburi urmărite
-          </Link>
-
-          {/* MODIFICARE:
-              am pus același stil și pe linkul către roadmaps
-
-              VARIANTA VECHE:
-              <Link to="/roadmaps">Planuri de dezvoltare</Link>
-          */}
-          <Link to="/roadmaps" style={styles.link}>
-            Planuri de dezvoltare
-          </Link>
-        </div>
-      </div>
+    <AppLayout
+      title="Competențele mele"
+      subtitle="Administrează și actualizează profilul tău de competențe"
+    >
+      {message && <div style={styles.message}>{message}</div>}
 
       <div style={styles.card}>
-        <h2>Adaugă competență</h2>
+        <h2 style={styles.sectionTitle}>Adaugă competență</h2>
 
         <form onSubmit={handleAddSkill} style={styles.form}>
           <select
@@ -315,12 +290,6 @@ export default function CompetenteleMele() {
           >
             <option value="">Selectează competența</option>
 
-            {/* MODIFICARE:
-                folosim availableSkills în loc de catalogSkills
-
-                VARIANTA VECHE:
-                {catalogSkills.map((skill) => (...))}
-            */}
             {availableSkills.map((skill) => (
               <option key={skill.id} value={skill.id}>
                 {skill.name} ({skill.category})
@@ -345,21 +314,25 @@ export default function CompetenteleMele() {
           </button>
         </form>
 
-        <h2>Importă competențe din CV</h2>
+        <div style={styles.separator} />
 
-        <input
-          type="file"
-          accept=".pdf,.docx"
-          onChange={(e) => setCvFile(e.target.files[0])}
-        />
+        <h2 style={styles.sectionTitle}>Importă competențe din CV</h2>
 
-        <button onClick={handleUploadCV} style={styles.button}>
-          Analizează CV
-        </button>
+        <div style={styles.cvActions}>
+          <input
+            type="file"
+            accept=".pdf,.docx"
+            onChange={(e) => setCvFile(e.target.files[0])}
+          />
+
+          <button onClick={handleUploadCV} style={styles.button} type="button">
+            Analizează CV
+          </button>
+        </div>
 
         {detectedSkills.length > 0 && (
           <div style={styles.result}>
-            <h3>Competențe detectate</h3>
+            <h3 style={styles.subTitle}>Competențe detectate</h3>
 
             {detectedSkills.map((skill) => (
               <div key={skill.skillId} style={styles.cvSkill}>
@@ -381,7 +354,9 @@ export default function CompetenteleMele() {
           </div>
         )}
 
-        <h2>Lista competențelor</h2>
+        <div style={styles.separator} />
+
+        <h2 style={styles.sectionTitle}>Lista competențelor</h2>
 
         <table style={styles.table}>
           <thead>
@@ -401,7 +376,7 @@ export default function CompetenteleMele() {
               </tr>
             ) : (
               mySkills.map((skill) => (
-                <tr key={skill.skill_id} style={styles.tr}>
+                <tr key={skill.skill_id}>
                   <td style={styles.td}>{skill.name}</td>
 
                   <td style={styles.td}>
@@ -433,73 +408,57 @@ export default function CompetenteleMele() {
             )}
           </tbody>
         </table>
-
-        {message && <div style={styles.message}>{message}</div>}
       </div>
-    </div>
+    </AppLayout>
   );
 }
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#f4f6f9",
-    padding: 24,
-    fontFamily: "Inter, sans-serif"
-  },
-
-  header: {
-    maxWidth: 900,
-    margin: "0 auto 20px auto",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    flexWrap: "wrap"
-  },
-
-  title: {
-    margin: 0
-  },
-
-  nav: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap"
-  },
-
-  link: {
-    textDecoration: "none",
-    padding: "10px 14px",
-    background: "white",
-    borderRadius: 8,
-    color: "#111827",
-    border: "1px solid #e5e7eb"
-  },
-
-  card: {
-    maxWidth: 900,
-    margin: "0 auto",
-    background: "white",
-    padding: 24,
+  message: {
+    marginBottom: 16,
+    padding: 12,
     borderRadius: 12,
-    boxShadow: "0 6px 18px rgba(0,0,0,0.05)"
+    background: "#ffffff",
+    color: "#374151",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
   },
-
+  card: {
+    background: "white",
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
+  },
+  sectionTitle: {
+    marginTop: 0,
+    marginBottom: 16,
+    color: "#111827"
+  },
+  subTitle: {
+    marginBottom: 12,
+    color: "#111827"
+  },
+  separator: {
+    height: 1,
+    background: "#e5e7eb",
+    margin: "24px 0"
+  },
   form: {
     display: "flex",
     gap: 10,
-    marginBottom: 20,
     flexWrap: "wrap"
   },
-
   input: {
     padding: 10,
     minWidth: 220,
     borderRadius: 8,
     border: "1px solid #d1d5db"
   },
-
+  cvActions: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+    flexWrap: "wrap"
+  },
   button: {
     padding: "10px 14px",
     background: "#111827",
@@ -507,9 +466,8 @@ const styles = {
     border: "none",
     borderRadius: 8,
     cursor: "pointer",
-    marginTop: 10
+    fontWeight: 600
   },
-
   secondaryButton: {
     padding: "6px 10px",
     background: "#e5e7eb",
@@ -517,7 +475,6 @@ const styles = {
     borderRadius: 6,
     cursor: "pointer"
   },
-
   dangerButton: {
     padding: "6px 10px",
     background: "#dc2626",
@@ -526,12 +483,9 @@ const styles = {
     borderRadius: 6,
     cursor: "pointer"
   },
-
   result: {
-    marginTop: 20,
-    marginBottom: 20
+    marginTop: 20
   },
-
   cvSkill: {
     display: "flex",
     justifyContent: "space-between",
@@ -542,44 +496,27 @@ const styles = {
     background: "#f9fafb",
     borderRadius: 8
   },
-
   alreadyAdded: {
     color: "#16a34a",
     fontWeight: 500
   },
-
   table: {
     width: "100%",
-    marginTop: 20,
+    marginTop: 12,
     borderCollapse: "collapse"
   },
-
   th: {
     textAlign: "left",
     padding: "12px 10px",
     borderBottom: "1px solid #e5e7eb"
   },
-
   td: {
     padding: "12px 10px",
     borderBottom: "1px solid #f1f5f9"
   },
-
-  tr: {
-    background: "white"
-  },
-
   emptyCell: {
     padding: 20,
     textAlign: "center",
     color: "#6b7280"
-  },
-
-  message: {
-    marginTop: 20,
-    padding: "12px 14px",
-    borderRadius: 8,
-    background: "#f3f4f6",
-    color: "#111827"
   }
 };
