@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { API_URL } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 export default function AnalizaJob() {
+  const navigate = useNavigate();
+
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [location, setLocation] = useState("");
@@ -13,10 +16,15 @@ export default function AnalizaJob() {
   const [loadingAnalyze, setLoadingAnalyze] = useState(false);
   const [loadingSave, setLoadingSave] = useState(false);
 
+  const [savedJobId, setSavedJobId] = useState(null);
+  const [showNextActions, setShowNextActions] = useState(false);
+
   async function handleAnalyze(e) {
     e.preventDefault();
     setMessage("");
     setAnalysis(null);
+    setShowNextActions(false);
+    setSavedJobId(null);
 
     if (!title.trim() || !description.trim()) {
       setMessage("Completează titlul și descrierea jobului.");
@@ -32,14 +40,14 @@ export default function AnalizaJob() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: title.trim(),
           company: company.trim(),
           location: location.trim(),
-          description: description.trim()
-        })
+          description: description.trim(),
+        }),
       });
 
       const data = await res.json();
@@ -70,7 +78,7 @@ export default function AnalizaJob() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: analysis.title,
@@ -80,15 +88,19 @@ export default function AnalizaJob() {
           employment_type: analysis.employment_type,
           description: analysis.description,
           score: analysis.score,
-          detectedSkills: analysis.detectedSkills,
-          status: "SALVAT"
-        })
+          detectedSkills: analysis.detectedSkills || [],
+          matches: analysis.matches || [],
+          gaps: analysis.gaps || [],
+          status: "SALVAT",
+        }),
       });
 
       const data = await res.json();
 
       if (data.ok) {
         setMessage("Jobul a fost salvat cu succes.");
+        setSavedJobId(data.jobId || data.id || null);
+        setShowNextActions(true);
       } else {
         setMessage(data.error || "Nu s-a putut salva jobul.");
       }
@@ -140,7 +152,11 @@ export default function AnalizaJob() {
               onChange={(e) => setDescription(e.target.value)}
             />
 
-            <button type="submit" style={styles.button} disabled={loadingAnalyze}>
+            <button
+              type="submit"
+              style={styles.button}
+              disabled={loadingAnalyze}
+            >
               {loadingAnalyze ? "Se analizează..." : "Analizează jobul"}
             </button>
           </form>
@@ -168,12 +184,16 @@ export default function AnalizaJob() {
 
                 <div style={styles.metaCard}>
                   <div style={styles.metaTitle}>Mod de lucru</div>
-                  <div style={styles.metaValue}>{analysis.work_mode || "-"}</div>
+                  <div style={styles.metaValue}>
+                    {analysis.work_mode || "-"}
+                  </div>
                 </div>
 
                 <div style={styles.metaCard}>
                   <div style={styles.metaTitle}>Tip angajare</div>
-                  <div style={styles.metaValue}>{analysis.employment_type || "-"}</div>
+                  <div style={styles.metaValue}>
+                    {analysis.employment_type || "-"}
+                  </div>
                 </div>
               </div>
 
@@ -227,6 +247,53 @@ export default function AnalizaJob() {
               >
                 {loadingSave ? "Se salvează..." : "Salvează jobul"}
               </button>
+              {showNextActions && (
+                <div style={styles.nextActionsCard}>
+                  <h3 style={styles.subTitle}>Ce vrei să faci mai departe?</h3>
+                  <p style={styles.nextActionsText}>
+                    Analiza a fost salvată cu succes. Poți continua cu unul
+                    dintre pașii de mai jos.
+                  </p>
+
+                  <div style={styles.nextActionsGrid}>
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={() =>
+                        savedJobId
+                          ? navigate(`/joburi-urmarite/${savedJobId}`)
+                          : navigate("/joburi-urmarite")
+                      }
+                    >
+                      Vezi în Joburi urmărite
+                    </button>
+
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={() => navigate("/competentele-mele")}
+                    >
+                      Vezi competențele mele
+                    </button>
+
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={() => navigate("/roadmaps")}
+                    >
+                      Mergi la roadmap-uri
+                    </button>
+
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={() => navigate("/analytics")}
+                    >
+                      Vezi analytics
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -242,34 +309,34 @@ const styles = {
     borderRadius: 12,
     background: "#ffffff",
     color: "#374151",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)",
   },
   grid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 20
+    gap: 20,
   },
   card: {
     background: "white",
     borderRadius: 16,
     padding: 24,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
   },
   sectionTitle: {
     marginTop: 0,
     marginBottom: 16,
-    color: "#111827"
+    color: "#111827",
   },
   form: {
     display: "flex",
     flexDirection: "column",
-    gap: 12
+    gap: 12,
   },
   input: {
     padding: 12,
     borderRadius: 8,
     border: "1px solid #d1d5db",
-    fontSize: 14
+    fontSize: 14,
   },
   textarea: {
     minHeight: 220,
@@ -278,7 +345,7 @@ const styles = {
     borderRadius: 8,
     border: "1px solid #d1d5db",
     fontSize: 14,
-    fontFamily: "Inter, sans-serif"
+    fontFamily: "Inter, sans-serif",
   },
   button: {
     padding: 12,
@@ -287,72 +354,72 @@ const styles = {
     background: "#111827",
     color: "white",
     cursor: "pointer",
-    fontWeight: 600
+    fontWeight: 600,
   },
   placeholder: {
     color: "#6b7280",
-    lineHeight: 1.7
+    lineHeight: 1.7,
   },
   scoreBox: {
     padding: 16,
     borderRadius: 14,
     background: "#f9fafb",
     border: "1px solid #e5e7eb",
-    marginBottom: 18
+    marginBottom: 18,
   },
   scoreLabel: {
     fontSize: 13,
     color: "#6b7280",
     textTransform: "uppercase",
-    letterSpacing: 1
+    letterSpacing: 1,
   },
   scoreValue: {
     marginTop: 8,
     fontSize: 36,
     fontWeight: 800,
-    color: "#111827"
+    color: "#111827",
   },
   metaGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 12
+    gap: 12,
   },
   metaCard: {
     background: "#f9fafb",
     border: "1px solid #e5e7eb",
     borderRadius: 12,
-    padding: 14
+    padding: 14,
   },
   metaTitle: {
     fontSize: 12,
     color: "#6b7280",
     textTransform: "uppercase",
-    letterSpacing: 1
+    letterSpacing: 1,
   },
   metaValue: {
     marginTop: 6,
     color: "#111827",
-    fontWeight: 600
+    fontWeight: 600,
   },
   separator: {
     height: 1,
     background: "#e5e7eb",
-    margin: "20px 0"
+    margin: "20px 0",
   },
   columns: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 20
+    gap: 20,
   },
   subTitle: {
     marginTop: 0,
     marginBottom: 12,
-    color: "#111827"
+    color: "#111827",
   },
   tags: {
     display: "flex",
     flexWrap: "wrap",
-    gap: 8
+    gap: 8,
   },
   gapTag: {
     padding: "8px 12px",
@@ -360,7 +427,7 @@ const styles = {
     background: "#fee2e2",
     color: "#991b1b",
     fontWeight: 600,
-    fontSize: 14
+    fontSize: 14,
   },
   matchTag: {
     padding: "8px 12px",
@@ -368,9 +435,35 @@ const styles = {
     background: "#dcfce7",
     color: "#166534",
     fontWeight: 600,
-    fontSize: 14
+    fontSize: 14,
   },
   emptyText: {
-    color: "#6b7280"
-  }
+    color: "#6b7280",
+  },
+  nextActionsCard: {
+    marginTop: 20,
+    padding: 20,
+    borderRadius: 14,
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb",
+  },
+  nextActionsText: {
+    color: "#4b5563",
+    lineHeight: 1.6,
+    marginBottom: 14,
+  },
+  nextActionsGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  },
+  secondaryButton: {
+    padding: "12px 14px",
+    borderRadius: 8,
+    border: "1px solid #d1d5db",
+    background: "white",
+    color: "#111827",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
 };

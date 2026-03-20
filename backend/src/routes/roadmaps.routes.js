@@ -254,7 +254,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
 /**
  * PATCH /api/roadmaps/steps/:stepId
- * Actualizează statusul unui pas
+ * Actualizează statusul unui pas și verifică dacă skill-ul asociat a fost finalizat complet
  */
 router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
   try {
@@ -278,11 +278,16 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       });
     }
 
-    // verificăm dacă pasul aparține userului
+    // verificăm dacă pasul aparține userului + luăm skill_id
     const [rows] = await db.query(
-      `SELECT rs.id, rs.roadmap_id
+      `SELECT
+         rs.id,
+         rs.roadmap_id,
+         rs.skill_id,
+         s.name AS skill_name
        FROM roadmap_steps rs
        JOIN roadmaps r ON rs.roadmap_id = r.id
+       LEFT JOIN skills s ON rs.skill_id = s.id
        WHERE rs.id = ? AND r.user_id = ?`,
       [stepId, userId]
     );
@@ -294,7 +299,10 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       });
     }
 
-    const roadmapId = rows[0].roadmap_id;
+    const stepRow = rows[0];
+    const roadmapId = stepRow.roadmap_id;
+    const skillId = stepRow.skill_id;
+    const skillName = stepRow.skill_name;
 
     // update status pas
     await db.query(
@@ -304,7 +312,7 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       [status, stepId]
     );
 
-    // recalcul progress
+    // recalcul progress roadmap
     const [stats] = await db.query(
       `SELECT
          COUNT(*) AS total_steps,
@@ -331,6 +339,30 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       [progress, roadmapStatus, roadmapId]
     );
 
+    // verificăm dacă toate step-urile pentru skillul curent sunt complete
+    let skillCompleted = false;
+    let completedSkill = null;
+
+    if (skillId) {
+      const [sameSkillSteps] = await db.query(
+        `SELECT status
+         FROM roadmap_steps
+         WHERE roadmap_id = ? AND skill_id = ?`,
+        [roadmapId, skillId]
+      );
+
+      skillCompleted =
+        sameSkillSteps.length > 0 &&
+        sameSkillSteps.every((row) => row.status === "COMPLETED");
+
+      if (skillCompleted) {
+        completedSkill = {
+          skillId: Number(skillId),
+          skillName: skillName || "Skill"
+        };
+      }
+    }
+
     if (status === "COMPLETED") {
       await logActivity(userId, "ROADMAP_STEP_DONE", "roadmap_step", stepId);
     }
@@ -339,7 +371,9 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       ok: true,
       message: "Pas actualizat cu succes.",
       progress,
-      roadmap_status: roadmapStatus
+      roadmap_status: roadmapStatus,
+      skillCompleted,
+      completedSkill
     });
   } catch (error) {
     console.error("Eroare la actualizarea pasului:", error);

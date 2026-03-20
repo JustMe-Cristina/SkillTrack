@@ -65,7 +65,7 @@ export default function Autentificare() {
 
       if (data.ok) {
         localStorage.setItem("token", data.token);
-        navigate("/analiza");
+        navigate("/panou");
       } else {
         setMesaj(traducereMesaj(data.error));
       }

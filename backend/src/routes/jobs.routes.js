@@ -108,7 +108,6 @@ async function analyzeJobData(
 ) {
   const text = String(description || "").toLowerCase();
 
-  // Final: folosim toate skillurile din catalogul hard-skills
   const [skills] = await db.query(
     "SELECT id, name, category FROM skills ORDER BY name ASC"
   );
@@ -373,7 +372,7 @@ router.get("/", auth, async (req, res) => {
 
 /**
  * GET /api/jobs/:id
- * Returnează detaliile unui job + scor recalculat dinamic
+ * Returnează detaliile unui job + analiza completă recalculată dinamic
  */
 router.get("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
@@ -473,11 +472,13 @@ router.get("/:id", auth, async (req, res) => {
 
     return res.json({
       ok: true,
-      job: jobs[0],
-      requiredSkills,
-      dynamicScore,
-      matches,
-      gaps
+      job: {
+        ...jobs[0],
+        match_score: dynamicScore,
+        requiredSkills,
+        matches,
+        gaps
+      }
     });
   } catch (err) {
     console.error("GET JOB DETAILS ERROR:", err);

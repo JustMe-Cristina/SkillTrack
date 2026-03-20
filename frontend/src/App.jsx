@@ -1,21 +1,26 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
+import ProtectedRoute from "./components/ProtectedRoute";
+
 import Autentificare from "./pages/Autentificare";
 import PanouPrincipal from "./pages/PanouPrincipal";
 import AnalizaJob from "./pages/AnalizaJob";
-import CompetenteleMele from "./pages/CompetenteleMele";
 import JoburiUrmarite from "./pages/JoburiUrmarite";
+import CompetenteleMele from "./pages/CompetenteleMele";
 import PlanuriDeDezvoltare from "./pages/PlanuriDeDezvoltare";
-import ProtectedRoute from "./components/ProtectedRoute";
+import Analytics from "./pages/Analytics";
+import ProfilulMeu from "./pages/ProfilulMeu";
+import DetaliiJobUrmarit from "./pages/DetaliiJobUrmarit";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Autentificare />} />
+        <Route path="/autentificare" element={<Autentificare />} />
+        <Route path="/autentificare" element={<Autentificare />} />
 
         <Route
-          path="/dashboard"
+          path="/panou"
           element={
             <ProtectedRoute>
               <PanouPrincipal />
@@ -33,19 +38,27 @@ function App() {
         />
 
         <Route
-          path="/competente"
+          path="/joburi-urmarite"
           element={
             <ProtectedRoute>
-              <CompetenteleMele />
+              <JoburiUrmarite />
             </ProtectedRoute>
           }
         />
 
         <Route
-          path="/joburi"
+          path="/joburi-urmarite/:jobId"
           element={
             <ProtectedRoute>
-              <JoburiUrmarite />
+              <DetaliiJobUrmarit />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competentele-mele"
+          element={
+            <ProtectedRoute>
+              <CompetenteleMele />
             </ProtectedRoute>
           }
         />
@@ -59,7 +72,25 @@ function App() {
           }
         />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="/analytics"
+          element={
+            <ProtectedRoute>
+              <Analytics />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/profilul-meu"
+          element={
+            <ProtectedRoute>
+              <ProfilulMeu />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/panou" replace />} />
       </Routes>
     </BrowserRouter>
   );

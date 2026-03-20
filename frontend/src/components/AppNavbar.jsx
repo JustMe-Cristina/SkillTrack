@@ -25,13 +25,13 @@ export default function AppNavbar() {
 
   function handleLogout() {
     localStorage.removeItem("token");
-    navigate("/");
+    navigate("/autentificare");
   }
 
   return (
     <div style={styles.wrapper}>
       <div style={styles.left}>
-        <Link to="/dashboard" style={getLinkStyle("/dashboard")}>
+        <Link to="/panou" style={getLinkStyle("/panou")}>
           Dashboard
         </Link>
 
@@ -39,16 +39,30 @@ export default function AppNavbar() {
           Analiză job
         </Link>
 
-        <Link to="/competente" style={getLinkStyle("/competente")}>
+        <Link
+          to="/competentele-mele"
+          style={getLinkStyle("/competentele-mele")}
+        >
           Competențele mele
         </Link>
 
-        <Link to="/joburi" style={getLinkStyle("/joburi")}>
+        <Link
+          to="/joburi-urmarite"
+          style={getLinkStyle("/joburi-urmarite")}
+        >
           Joburi urmărite
         </Link>
 
         <Link to="/roadmaps" style={getLinkStyle("/roadmaps")}>
           Planuri de dezvoltare
+        </Link>
+
+        <Link to="/analytics" style={getLinkStyle("/analytics")}>
+          Analytics
+        </Link>
+
+        <Link to="/profilul-meu" style={getLinkStyle("/profilul-meu")}>
+          Profilul meu
         </Link>
       </div>
 

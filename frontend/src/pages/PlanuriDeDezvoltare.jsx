@@ -10,6 +10,7 @@ export default function PlanuriDeDezvoltare() {
   const [roadmapDetails, setRoadmapDetails] = useState({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [completedSkillPrompt, setCompletedSkillPrompt] = useState(null);
 
   useEffect(() => {
     fetchInitialData();
@@ -146,7 +147,10 @@ export default function PlanuriDeDezvoltare() {
       if (data.ok) {
         setMessage("Pas actualizat cu succes.");
 
-        // reload roadmap details
+        if (data.skillCompleted && data.completedSkill) {
+          setCompletedSkillPrompt(data.completedSkill);
+        }
+
         const detailsRes = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -170,6 +174,42 @@ export default function PlanuriDeDezvoltare() {
     } catch (err) {
       console.error(err);
       setMessage("Eroare la actualizarea pasului.");
+    }
+  }
+
+  async function addCompletedSkillToProfile() {
+    if (!completedSkillPrompt) return;
+
+    const token = localStorage.getItem("token");
+
+    try {
+      const res = await fetch(`${API_URL}/api/user-skills`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          skillId: Number(completedSkillPrompt.skillId),
+          level: 2,
+          confidence: 3
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        setMessage(
+          `Competența ${completedSkillPrompt.skillName} a fost adăugată la profilul tău.`
+        );
+        setCompletedSkillPrompt(null);
+        await fetchRoadmaps();
+      } else {
+        setMessage(data.error || "Nu s-a putut adăuga skillul la profil.");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Eroare la adăugarea skillului în profil.");
     }
   }
 
@@ -341,6 +381,39 @@ export default function PlanuriDeDezvoltare() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {completedSkillPrompt && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Skill finalizat 🎉</h3>
+            <p style={styles.modalText}>
+              Ai finalizat roadmap-ul pentru skillul{" "}
+              <strong>{completedSkillPrompt.skillName}</strong>.
+            </p>
+            <p style={styles.modalText}>
+              Vrei să adaugi această competență la profilul tău?
+            </p>
+
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                onClick={addCompletedSkillToProfile}
+              >
+                Da, adaugă skillul
+              </button>
+
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setCompletedSkillPrompt(null)}
+              >
+                Mai târziu
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </AppLayout>
@@ -573,5 +646,38 @@ const styles = {
   emptyText: {
     color: "#6b7280",
     lineHeight: 1.7
+  },
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(17, 24, 39, 0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999
+  },
+  modal: {
+    width: "100%",
+    maxWidth: 460,
+    background: "white",
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: "0 20px 40px rgba(0,0,0,0.18)"
+  },
+  modalTitle: {
+    marginTop: 0,
+    marginBottom: 12,
+    color: "#111827"
+  },
+  modalText: {
+    color: "#4b5563",
+    lineHeight: 1.7,
+    marginBottom: 12
+  },
+  modalActions: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginTop: 16
   }
 };
