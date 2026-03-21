@@ -10,10 +10,12 @@ function generateStepsForSkill(skillName) {
     {
       title: `Învață conceptele fundamentale ale competenței ${skillName}`,
       description: `Parcurge noțiunile de bază și principalele concepte asociate competenței ${skillName}.`,
+      estimated_days: 3
     },
     {
       title: `Aplică ${skillName} într-un mini-proiect`,
       description: `Realizează un exercițiu practic sau un mini-proiect pentru a exersa competența ${skillName}.`,
+      estimated_days: 5
     }
   ];
 }
@@ -129,14 +131,15 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       for (const step of steps) {
         await db.query(
           `INSERT INTO roadmap_steps
-            (roadmap_id, skill_id, step_order, title, description, status)
-           VALUES (?, ?, ?, ?, ?, 'NOT_STARTED')`,
+            (roadmap_id, skill_id, step_order, title, description, estimated_days, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'NOT_STARTED')`,
           [
             roadmapId,
             skill.skill_id,
             stepOrder,
             step.title,
             step.description,
+            step.estimated_days
           ]
         );
 
@@ -336,26 +339,70 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       [progress, roadmapStatus, roadmapId]
     );
 
-    // verificăm dacă toate step-urile pentru skillul curent sunt complete
+    // ── Logică nivel automat bazată pe pași completați ──────────────
+    // Pattern: fiecare skill are 2 pași în roadmap
+    //   pasul 1 completat (concepte)  → Fondamental (level 1)
+    //   ambii pași completați         → Independent (level 2)
+    //   Avansat (level 3) = setat manual de utilizator
+    //
+    // Referință: Dreyfus model of skill acquisition
+    //            DigComp/EQF framework pentru 3 nivele operaționale
+
     let skillCompleted = false;
     let completedSkill = null;
 
     if (skillId) {
       const [sameSkillSteps] = await db.query(
-        `SELECT status
+        `SELECT id, step_order, status
          FROM roadmap_steps
-         WHERE roadmap_id = ? AND skill_id = ?`,
+         WHERE roadmap_id = ? AND skill_id = ?
+         ORDER BY step_order ASC`,
         [roadmapId, skillId]
       );
 
-      skillCompleted =
-        sameSkillSteps.length > 0 &&
-        sameSkillSteps.every((row) => row.status === "COMPLETED");
+      const totalSkillSteps = sameSkillSteps.length;
+      const completedSkillSteps = sameSkillSteps.filter(
+        (r) => r.status === "COMPLETED"
+      ).length;
+
+      // Calculăm nivelul nou bazat pe progres
+      let newLevel = null;
+
+      if (completedSkillSteps === totalSkillSteps && totalSkillSteps > 0) {
+        // Toți pașii completați → Independent
+        newLevel = 2;
+        skillCompleted = true;
+      } else if (completedSkillSteps >= 1) {
+        // Cel puțin un pas completat → Fondamental
+        newLevel = 1;
+      }
+
+      // Actualizăm nivelul în user_skills dacă există deja skillul în profil
+      // Dacă nu există, nu îl adăugăm automat — doar când toți pașii sunt gata
+      if (newLevel !== null) {
+        const [existingSkill] = await db.query(
+          `SELECT skill_id, level FROM user_skills WHERE user_id = ? AND skill_id = ?`,
+          [userId, skillId]
+        );
+
+        if (existingSkill.length > 0) {
+          // Skillul există în profil — actualizăm nivelul doar dacă crește
+          const currentLevel = Number(existingSkill[0].level);
+          if (newLevel > currentLevel) {
+            await db.query(
+              `UPDATE user_skills SET level = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE user_id = ? AND skill_id = ?`,
+              [newLevel, userId, skillId]
+            );
+          }
+        }
+      }
 
       if (skillCompleted) {
         completedSkill = {
           skillId: Number(skillId),
-          skillName: skillName || "Skill"
+          skillName: skillName || "Skill",
+          level: 2  // Independent
         };
       }
     }
@@ -379,6 +426,42 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       message: "A apărut o eroare la actualizarea pasului.",
       error: error.message
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/roadmaps/:id
+// Șterge un roadmap și toți pașii asociați
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete("/:id", authMiddleware, async (req, res) => {
+  const userId = req.user.userId;
+  const roadmapId = Number(req.params.id);
+
+  if (!Number.isFinite(roadmapId)) {
+    return res.status(400).json({ ok: false, message: "ID roadmap invalid." });
+  }
+
+  try {
+    // Verificăm că roadmap-ul aparține userului
+    const [rows] = await db.query(
+      `SELECT id FROM roadmaps WHERE id = ? AND user_id = ?`,
+      [roadmapId, userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, message: "Roadmap negăsit." });
+    }
+
+    // Ștergem pașii întâi (foreign key constraint)
+    await db.query(`DELETE FROM roadmap_steps WHERE roadmap_id = ?`, [roadmapId]);
+
+    // Ștergem roadmap-ul
+    await db.query(`DELETE FROM roadmaps WHERE id = ?`, [roadmapId]);
+
+    return res.json({ ok: true, message: "Roadmap șters cu succes." });
+  } catch (error) {
+    console.error("Eroare la ștergerea roadmap-ului:", error);
+    return res.status(500).json({ ok: false, message: "Eroare la ștergere." });
   }
 });
 

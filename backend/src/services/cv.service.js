@@ -1,4 +1,6 @@
-const pdfParse = require("pdf-parse/lib/pdf-parse");
+// Importul corect pentru pdf-parse — fără /lib/pdf-parse
+// Versiunea anterioară folosea un path intern care nu există
+const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const db = require("../config/db");
 const { skillMatchesText } = require("../utils/skillAliases");
@@ -19,7 +21,7 @@ async function extractText(file) {
     return result.value;
   }
 
-  throw new Error("Unsupported file type");
+  throw new Error("Tip de fișier nesuportat. Folosește PDF sau DOCX.");
 }
 
 async function extractSkillsFromCV(file, userId) {

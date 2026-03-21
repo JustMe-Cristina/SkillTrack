@@ -177,6 +177,35 @@ export default function PlanuriDeDezvoltare() {
     }
   }
 
+  async function deleteRoadmap(roadmapId) {
+    if (!window.confirm("Sigur vrei să ștergi acest roadmap? Acțiunea nu poate fi anulată.")) return;
+
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setMessage("Roadmap șters.");
+        setRoadmapDetails((prev) => {
+          const next = { ...prev };
+          delete next[roadmapId];
+          return next;
+        });
+        if (expandedRoadmapId === roadmapId) setExpandedRoadmapId(null);
+        await fetchRoadmaps();
+      } else {
+        setMessage(data.message || "Nu s-a putut șterge roadmap-ul.");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Eroare la ștergerea roadmap-ului.");
+    }
+  }
+
+
   async function addCompletedSkillToProfile() {
     if (!completedSkillPrompt) return;
 
@@ -198,18 +227,23 @@ export default function PlanuriDeDezvoltare() {
 
       const data = await res.json();
 
-      if (data.ok) {
+      // Tratăm și "Skill already exists" ca succes — skillul e deja în profil
+      if (data.ok || data.error === "Skill already exists") {
         setMessage(
-          `Competența ${completedSkillPrompt.skillName} a fost adăugată la profilul tău.`
+          data.error === "Skill already exists"
+            ? `${completedSkillPrompt.skillName} era deja în profilul tău.`
+            : `Competența ${completedSkillPrompt.skillName} a fost adăugată la profilul tău.`
         );
         setCompletedSkillPrompt(null);
         await fetchRoadmaps();
       } else {
         setMessage(data.error || "Nu s-a putut adăuga skillul la profil.");
+        setCompletedSkillPrompt(null);
       }
     } catch (err) {
       console.error(err);
       setMessage("Eroare la adăugarea skillului în profil.");
+      setCompletedSkillPrompt(null);
     }
   }
 
@@ -262,16 +296,26 @@ export default function PlanuriDeDezvoltare() {
             return (
               <div key={roadmap.id} style={styles.card}>
                 <div style={styles.cardHeader}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <h3 style={styles.cardTitle}>{roadmap.title}</h3>
                     <p style={styles.cardDescription}>
                       {roadmap.description || "Fără descriere disponibilă."}
                     </p>
                   </div>
 
-                  <span style={getStatusBadgeStyle(roadmap.status)}>
-                    {formatStatus(roadmap.status)}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <span style={getStatusBadgeStyle(roadmap.status)}>
+                      {formatStatus(roadmap.status)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => deleteRoadmap(roadmap.id)}
+                      style={styles.deleteBtn}
+                      title="Șterge roadmap"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
 
                 <div style={styles.metaGrid}>
@@ -336,35 +380,47 @@ export default function PlanuriDeDezvoltare() {
                               <span>
                                 <strong>Skill:</strong> {step.skill_name || "-"}
                               </span>
+                              <span>
+                                <strong>Zile estimate:</strong> {step.estimated_days || "-"}
+                              </span>
                             </div>
 
                             <div style={styles.stepActions}>
                               <button
                                 type="button"
-                                style={styles.secondaryButton}
-                                onClick={() =>
-                                  updateStepStatus(roadmap.id, step.id, "NOT_STARTED")
-                                }
+                                style={{
+                                  ...styles.stepBtn,
+                                  background: step.status === "NOT_STARTED" ? "#111827" : "white",
+                                  color: step.status === "NOT_STARTED" ? "white" : "#111827",
+                                  border: step.status === "NOT_STARTED" ? "none" : "1px solid #d1d5db"
+                                }}
+                                onClick={() => updateStepStatus(roadmap.id, step.id, "NOT_STARTED")}
                               >
                                 Neînceput
                               </button>
 
                               <button
                                 type="button"
-                                style={styles.secondaryButton}
-                                onClick={() =>
-                                  updateStepStatus(roadmap.id, step.id, "IN_PROGRESS")
-                                }
+                                style={{
+                                  ...styles.stepBtn,
+                                  background: step.status === "IN_PROGRESS" ? "#1d4ed8" : "white",
+                                  color: step.status === "IN_PROGRESS" ? "white" : "#111827",
+                                  border: step.status === "IN_PROGRESS" ? "none" : "1px solid #d1d5db"
+                                }}
+                                onClick={() => updateStepStatus(roadmap.id, step.id, "IN_PROGRESS")}
                               >
                                 În progres
                               </button>
 
                               <button
                                 type="button"
-                                style={styles.primaryButton}
-                                onClick={() =>
-                                  updateStepStatus(roadmap.id, step.id, "COMPLETED")
-                                }
+                                style={{
+                                  ...styles.stepBtn,
+                                  background: step.status === "COMPLETED" ? "#15803d" : "white",
+                                  color: step.status === "COMPLETED" ? "white" : "#111827",
+                                  border: step.status === "COMPLETED" ? "none" : "1px solid #d1d5db"
+                                }}
+                                onClick={() => updateStepStatus(roadmap.id, step.id, "COMPLETED")}
                               >
                                 Finalizat
                               </button>
@@ -386,11 +442,13 @@ export default function PlanuriDeDezvoltare() {
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>Skill finalizat 🎉</h3>
             <p style={styles.modalText}>
-              Ai finalizat roadmap-ul pentru skillul{" "}
+              Ai completat toți pașii pentru{" "}
               <strong>{completedSkillPrompt.skillName}</strong>.
             </p>
             <p style={styles.modalText}>
-              Vrei să adaugi această competență la profilul tău?
+              Dacă skillul e deja în profilul tău, nivelul a fost actualizat
+              automat la <strong>Independent</strong>. Dacă nu e în profil,
+              vrei să îl adaugi?
             </p>
 
             <div style={styles.modalActions}>
@@ -616,6 +674,15 @@ const styles = {
     flexWrap: "wrap",
     marginTop: 16
   },
+  stepBtn: {
+    padding: "8px 14px",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 13,
+    fontFamily: "inherit",
+    transition: "all 0.15s ease"
+  },
   primaryButton: {
     padding: "10px 14px",
     borderRadius: 8,
@@ -624,6 +691,20 @@ const styles = {
     color: "white",
     cursor: "pointer",
     fontWeight: 600
+  },
+  deleteBtn: {
+    width: 30,
+    height: 30,
+    border: "1px solid #fecaca",
+    background: "#fff5f5",
+    color: "#dc2626",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
   },
   secondaryButton: {
     padding: "10px 14px",
