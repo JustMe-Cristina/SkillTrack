@@ -380,9 +380,6 @@ export default function PlanuriDeDezvoltare() {
                               <span>
                                 <strong>Skill:</strong> {step.skill_name || "-"}
                               </span>
-                              <span>
-                                <strong>Zile estimate:</strong> {step.estimated_days || "-"}
-                              </span>
                             </div>
 
                             <div style={styles.stepActions}>

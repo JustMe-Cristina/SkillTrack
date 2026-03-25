@@ -187,7 +187,7 @@ router.get("/dashboard", auth, async (req, res) => {
       [userId]
     );
 
-    // Activitate pentru heatmap și streak
+    // Activitate pentru heatmap și streak — cu detalii per tip acțiune
     const [activityRows] = await db.query(
       `SELECT
          DATE(created_at) AS date,
@@ -200,17 +200,37 @@ router.get("/dashboard", auth, async (req, res) => {
       [userId]
     );
 
+    // Detalii per zi pentru tooltip heatmap
+    const [activityDetails] = await db.query(
+      `SELECT
+         DATE(created_at) AS date,
+         action_type,
+         COUNT(*) AS count
+       FROM activity_log
+       WHERE user_id = ?
+         AND created_at >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+       GROUP BY DATE(created_at), action_type
+       ORDER BY DATE(created_at) ASC`,
+      [userId]
+    );
+
+    const detailsMap = {};
+    for (const row of activityDetails) {
+      const dateKey = formatDateLocal(row.date);
+      if (!detailsMap[dateKey]) detailsMap[dateKey] = [];
+      detailsMap[dateKey].push({ type: row.action_type, count: Number(row.count) });
+    }
+
     const activity = activityRows.map((row) => ({
       date: formatDateLocal(row.date),
-      count: Number(row.count)
+      count: Number(row.count),
+      details: detailsMap[formatDateLocal(row.date)] || []
     }));
 
     const streak = calculateStreak(activity);
-    const totalActions = activity.reduce((sum, day) => sum + day.count, 0);
     const activeDays = activity.length;
 
     // Scorul mediu pe toate joburile
-    // Dacă nu are joburi → 0
     const avgScore =
       jobs.length === 0
         ? 0
@@ -219,7 +239,7 @@ router.get("/dashboard", auth, async (req, res) => {
               jobs.length
           );
 
-    // Jobul cu scorul cel mai mare — folosit pentru "Focus săptămâna aceasta"
+    // Jobul cu scorul cel mai mare
     const bestJob =
       jobs.length === 0
         ? null
@@ -227,15 +247,22 @@ router.get("/dashboard", auth, async (req, res) => {
             (a, b) => (Number(b.match_score) || 0) - (Number(a.match_score) || 0)
           )[0];
 
+    // Numărul de skills în profil
+    const [skillCountRow] = await db.query(
+      `SELECT COUNT(*) as cnt FROM user_skills WHERE user_id = ?`,
+      [userId]
+    );
+    const skillCount = Number(skillCountRow[0]?.cnt || 0);
+
     return res.json({
       ok: true,
       user: { name: userRow?.name || "Utilizator" },
       avgScore,
-      motivationalMessage: buildMotivationalMessage(avgScore),
       streak,
-      totalActions,
       activeDays,
       activity,
+      skillCount,
+      totalJobs: jobs.length,
       bestJob: bestJob
         ? {
             id: bestJob.id,
@@ -641,57 +668,77 @@ router.get("/profile-vs-market", auth, async (req, res) => {
       }
     }
 
-    // 6. Calculăm procentele și gap-ul per categorie
+    // 6. Calculăm acoperirea per categorie
+    // Metrica corectă: câte din skills CERUTE le ai tu
+    // acoperire = skills cerute pe care le ai / total skills cerute
     const categories = Object.values(categoriesMap)
+      .filter((cat) => cat.marketNeeds > 0)  // doar categorii cerute de joburile tale
       .map((cat) => {
-        const userCoverage = cat.totalSkills === 0
-          ? 0
-          : Math.round((cat.userHas / cat.totalSkills) * 100);
+        // Skills cerute pe care le ai — intersecția
+        const coveredRequired = cat.skills.filter(
+          (s) => s.userHas && s.marketNeeds
+        ).length;
 
-        const marketDemand = cat.totalSkills === 0
-          ? 0
-          : Math.round((cat.marketNeeds / cat.totalSkills) * 100);
+        // Skills cerute pe care NU le ai — gap-ul real
+        const missingSkills = cat.skills
+          .filter((s) => !s.userHas && s.marketNeeds)
+          .map((s) => s.name);
 
-        const gap = userCoverage - marketDemand;
+        // Skills pe care le ai dar nu sunt cerute — "în plus"
+        const extraSkills = cat.skills
+          .filter((s) => s.userHas && !s.marketNeeds)
+          .map((s) => s.name);
 
-        // Sortăm skills: mai întâi cele cerute de piață, apoi cele ale userului
+        // Procentul de acoperire din ce e cerut
+        const coveragePercent = cat.marketNeeds === 0
+          ? 100
+          : Math.round((coveredRequired / cat.marketNeeds) * 100);
+
         const skillsSorted = cat.skills.sort((a, b) => {
-          // Prioritate: cer joburile (indiferent dacă ai sau nu)
-          if (b.marketNeeds && !a.marketNeeds) return 1;
-          if (a.marketNeeds && !b.marketNeeds) return -1;
-          // Apoi după nume alfabetic
+          // Lipsă și cerute → primele
+          if (!a.userHas && a.marketNeeds && (b.userHas || !b.marketNeeds)) return -1;
+          if (!b.userHas && b.marketNeeds && (a.userHas || !a.marketNeeds)) return 1;
+          // Cerute și ai → al doilea
+          if (a.userHas && a.marketNeeds && !b.marketNeeds) return -1;
+          if (b.userHas && b.marketNeeds && !a.marketNeeds) return 1;
           return a.name.localeCompare(b.name);
         });
 
         return {
           category: cat.category,
-          userCoverage,
-          marketDemand,
-          gap,
+          coveredRequired,       // câte skills cerute le ai
+          marketNeeds: cat.marketNeeds,  // total skills cerute
+          coveragePercent,       // % acoperire din ce e cerut
+          missingSkills,         // lista skills lipsă (cerute, nu le ai)
+          extraSkills,           // lista skills în plus (le ai, nu sunt cerute)
           userHas: cat.userHas,
-          marketNeeds: cat.marketNeeds,
-          totalSkills: cat.totalSkills,
-          skills: skillsSorted  // lista individuală pentru expandare
+          skills: skillsSorted
         };
       })
-      // Sortăm după gap crescător — categoriile cu cel mai mare deficit primele
-      .sort((a, b) => a.gap - b.gap);
+      .sort((a, b) => a.coveragePercent - b.coveragePercent); // cele mai slabe primele
 
-    // 7. Categoria cu cel mai mare gap negativ = prioritatea principală
-    const topGapCategory = categories.find((c) => c.gap < 0) || null;
+    // 7. Insight textual bazat pe skills lipsă concrete
+    const allMissingSkills = categories.flatMap((c) => c.missingSkills);
+    const allExtraSkills = categories.flatMap((c) => c.extraSkills);
 
-    // 8. Generăm un insight textual bazat pe date
     let insight = null;
-    if (topGapCategory) {
-      insight = `Categoria ${topGapCategory.category} are cel mai mare decalaj față de cerințele joburilor tale — ${Math.abs(topGapCategory.gap)}pp sub medie. Concentrează-te pe skills din această categorie pentru cel mai mare impact.`;
+    if (allMissingSkills.length === 0) {
+      insight = "Ai toate skills-urile cerute de joburile salvate.";
+    } else if (allMissingSkills.length <= 3) {
+      insight = `Îți lipsesc ${allMissingSkills.length} skills cerute: ${allMissingSkills.join(", ")}.`;
+      if (allExtraSkills.length > 0) {
+        insight += ` Ai în plus: ${allExtraSkills.slice(0, 3).join(", ")}${allExtraSkills.length > 3 ? " și altele" : ""}.`;
+      }
     } else {
-      insight = "Profilul tău este bine aliniat cu cerințele joburilor salvate pe toate categoriile.";
+      insight = `Îți lipsesc ${allMissingSkills.length} skills cerute. Prioritare: ${allMissingSkills.slice(0, 3).join(", ")}.`;
+      if (allExtraSkills.length > 0) {
+        insight += ` Ai în plus față de cerințe: ${allExtraSkills.slice(0, 2).join(", ")} și altele.`;
+      }
     }
 
     return res.json({
       ok: true,
       categories,
-      topGapCategory,
       insight,
       totalJobs: jobs.length
     });

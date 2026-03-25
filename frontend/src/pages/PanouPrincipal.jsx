@@ -2,533 +2,586 @@ import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Culori heatmap — stil GitHub, rampă verde
+// ─────────────────────────────────────────────────────────────────────────────
+function getHeatColor(count) {
+  const n = Number(count || 0);
+  if (n <= 0) return "#ebedf0";
+  if (n === 1) return "#C0DD97";
+  if (n === 2) return "#97C459";
+  if (n === 3) return "#639922";
+  return "#3B6D11";
+}
+
+function formatDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Generează 84 de zile (12 săptămâni) pentru heatmap compact
+function buildHeatmap(activityMap, detailsMap = {}) {
+  const days = [];
+  const today = new Date();
+  for (let i = 83; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = formatDate(d);
+    days.push({
+      date: key,
+      count: activityMap.get(key) || 0,
+      details: detailsMap[key] || []
+    });
+  }
+  return days;
+}
+
+// Calculează luna pentru etichete sub heatmap
+function getMonthLabels(days) {
+  const labels = [];
+  let lastMonth = null;
+  days.forEach((day, i) => {
+    const month = new Date(day.date).getMonth();
+    if (month !== lastMonth) {
+      labels.push({ col: Math.floor(i / 7), label: new Date(day.date).toLocaleString("ro-RO", { month: "short" }) });
+      lastMonth = month;
+    }
+  });
+  return labels;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENTA PRINCIPALĂ
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Traduce action_type în română
+function translateAction(type) {
+  const map = {
+    SKILL_ADDED: "skill adăugat",
+    SKILL_UPDATED: "skill actualizat",
+    SKILL_DELETED: "skill șters",
+    JOB_ANALYZED: "job analizat",
+    JOB_SAVED: "job salvat",
+    ROADMAP_CREATED: "roadmap creat",
+    ROADMAP_STEP_DONE: "pas roadmap finalizat"
+  };
+  return map[type] || type.toLowerCase().replace(/_/g, " ");
+}
+
 export default function PanouPrincipal() {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
+  const [tooltip, setTooltip] = useState(null); // { x, y, content }
 
-  useEffect(() => {
-    fetchDashboard();
-  }, []);
+  useEffect(() => { fetchDashboard(); }, []);
 
   async function fetchDashboard() {
     const token = localStorage.getItem("token");
-
+    setLoading(true);
     try {
-      setLoading(true);
-      setMessage("");
-
       const res = await fetch(`${API_URL}/api/analytics/dashboard`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
-
       const data = await res.json();
-
-      if (data.ok) {
-        setDashboard({
-          user: {
-            name: data.user?.name || "Cristina"
-          },
-          avgScore: Number(data.avgScore || 0),
-          motivationalMessage:
-            data.motivationalMessage ||
-            "Ești la început — fiecare skill adăugat contează.",
-          streak: Number(data.streak || 0),
-          totalActions: Number(data.totalActions || 0),
-          activeDays: Number(data.activeDays || 0),
-          activity: Array.isArray(data.activity) ? data.activity : [],
-          bestJob: data.bestJob || null
-        });
-      } else {
-        setMessage(data.error || "Nu s-a putut încărca dashboard-ul.");
-      }
+      if (data.ok) setDashboard(data);
     } catch (err) {
       console.error(err);
-      setMessage("Eroare la încărcarea dashboard-ului.");
     } finally {
       setLoading(false);
     }
   }
 
-  const heatmapDays = useMemo(() => {
-    if (!dashboard || !Array.isArray(dashboard.activity)) {
-      return generateEmptyHeatmap();
-    }
-
-    const activityMap = new Map(
-      dashboard.activity.map((day) => [day.date, Number(day.count || 0)])
-    );
-
-    return generateHeatmapFromActivity(activityMap);
+  // Construim heatmap-ul din datele de activitate
+  const heatmapData = useMemo(() => {
+    if (!dashboard?.activity) return buildHeatmap(new Map(), {});
+    const map = new Map(dashboard.activity.map((d) => [d.date, d.count]));
+    const detailsMap = {};
+    dashboard.activity.forEach((d) => { detailsMap[d.date] = d.details || []; });
+    return buildHeatmap(map, detailsMap);
   }, [dashboard]);
 
+  // Etichete luni — una per lună, poziționată la prima săptămână din lună
+  const monthLabels = useMemo(() => {
+    const labels = [];
+    let lastMonth = null;
+    for (let weekIdx = 0; weekIdx < 12; weekIdx++) {
+      const day = heatmapData[weekIdx * 7];
+      if (!day) continue;
+      const month = new Date(day.date).getMonth();
+      if (month !== lastMonth) {
+        labels.push({
+          col: weekIdx,
+          label: new Date(day.date).toLocaleString("ro-RO", { month: "short" })
+        });
+        lastMonth = month;
+      }
+    }
+    return labels;
+  }, [heatmapData]);
+
+  // Ziua și ora pentru salut
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("ro-RO", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric"
+  });
+
+  const userName = dashboard?.user?.name?.split(" ")[0] || "Cristina";
+
   return (
-    <AppLayout
-      title="Dashboard"
-      subtitle={`Bună, ${dashboard?.user?.name || "Cristina"} · Informatică Economică, UBB Cluj`}
-    >
+    <AppLayout title="Acasă" subtitle="">
       {loading ? (
-        <div style={styles.card}>Se încarcă dashboard-ul...</div>
+        <div style={styles.card}>
+          <div style={{ color: "#9ca3af", fontSize: 14 }}>Se încarcă...</div>
+        </div>
       ) : (
         <>
-          {message && <div style={styles.message}>{message}</div>}
+          {/* ══ HEADER ══════════════════════════════════════════════ */}
+          <div style={styles.header}>
+            <div>
+              <div style={styles.greeting}>Bună, {userName}</div>
+              <div style={styles.dateStr}>{dateStr}</div>
+            </div>
+          </div>
 
-          <div style={styles.gridTop}>
-            <div style={styles.card}>
-              <div style={styles.sectionLabel}>
-                Grad de pregătire · {dashboard?.bestJob?.title || "Portofoliu activ"}
-              </div>
+          {/* ══ CELE 3 CARDURI SDT ═══════════════════════════════════
+              Competență · Consistență · Competențe
+              Referință: Deci & Ryan SDT (1985, 2000)
+                         Yang et al. (2025) doi:10.3389/fpsyg.2025.1545980
+          ═══════════════════════════════════════════════════════════ */}
+          <div style={styles.gridThree}>
 
-              <div style={styles.scoreRow}>
+            {/* Competență — scor mediu portofoliu */}
+            <div style={{ ...styles.metricCard, borderLeft: "3px solid #378ADD" }}>
+              <div style={styles.metricLabel}>Competență</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
                 <ScoreCircle score={dashboard?.avgScore || 0} />
+                <div>
+                  <div style={styles.metricValue}>
+                    {dashboard?.avgScore || 0}%
+                  </div>
+                  <div style={styles.metricSub}>
+                    scor mediu · {dashboard?.totalJobs || 0} joburi
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                <div style={styles.scoreTextBlock}>
-                  <div style={styles.scoreMessage}>
-                    {dashboard?.motivationalMessage || "-"}
+            {/* Consistență — streak cu foc */}
+            <div style={{ ...styles.metricCard, borderLeft: "3px solid #EF9F27" }}>
+              <div style={styles.metricLabel}>Consistență</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
+                <div style={{ fontSize: 38, lineHeight: 1 }}>🔥</div>
+                <div>
+                  <div style={{ ...styles.metricValue, color: "#BA7517" }}>
+                    {dashboard?.streak || 0} zile
+                  </div>
+                  <div style={styles.metricSub}>
+                    {dashboard?.activeDays || 0} zile active total
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Competențe — skills în profil */}
+            <div style={{ ...styles.metricCard, borderLeft: "3px solid #1D9E75" }}>
+              <div style={styles.metricLabel}>Competențe</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
+                <div style={{ ...styles.bigNumber, color: "#1D9E75" }}>
+                  {dashboard?.skillCount || 0}
+                </div>
+                <div>
+                  <div style={styles.metricValue}>skills în profil</div>
+                  <div style={styles.metricSub}>adăugate manual sau din CV</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* ══ RÂNDUL DE JOS: Heatmap + Rol + Leaderboard ══════════ */}
+          <div style={styles.gridTwo}>
+
+            {/* Stânga: Heatmap + Rol potrivit */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+              {/* Heatmap activitate
+                  Referință: gamification & streak — Deci & Ryan SDT
+                             Gagné et al. PMC9088153 */}
+              <div style={styles.card}>
+                <div style={styles.sectionLabel}>Activitate · ultimele 12 săptămâni</div>
+
+                {/* Grid heatmap cu etichete zile săptămână */}
+                <div style={styles.heatmapWrap}>
+                  <div style={{ display: "flex", gap: 4 }}>
+
+                    {/* Etichete zile — L M M J V S D */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: 1 }}>
+                      {["L", "", "M", "", "V", "", "D"].map((label, i) => (
+                        <div key={i} style={{ height: 11, fontSize: 9, color: "#9ca3af", lineHeight: "11px", width: 10 }}>
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Grid săptămâni */}
+                    <div style={styles.heatmapGrid}>
+                      {Array.from({ length: 12 }, (_, weekIdx) => (
+                        <div key={weekIdx} style={styles.heatmapCol}>
+                          {Array.from({ length: 7 }, (_, dayIdx) => {
+                            const cell = heatmapData[weekIdx * 7 + dayIdx];
+                            return (
+                              <div
+                                key={dayIdx}
+                                style={{
+                                  ...styles.heatCell,
+                                  background: cell ? getHeatColor(cell.count) : "var(--heat-0)",
+                                  cursor: cell && cell.count > 0 ? "pointer" : "default"
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!cell) return;
+                                  const rect = e.target.getBoundingClientRect();
+                                  const dateObj = new Date(cell.date);
+                                  const dateStr = dateObj.toLocaleDateString("ro-RO", {
+                                    weekday: "short", day: "numeric", month: "short"
+                                  });
+                                  let content = cell.count === 0
+                                    ? `${dateStr} · nicio activitate`
+                                    : `${dateStr} · ${cell.count} acțiuni`;
+                                  if (cell.details && cell.details.length > 0) {
+                                    content += "\n" + cell.details
+                                      .map((d) => `• ${d.count}× ${translateAction(d.type)}`)
+                                      .join("\n");
+                                  }
+                                  setTooltip({ x: rect.left + rect.width / 2, y: rect.top - 8, content });
+                                }}
+                                onMouseLeave={() => setTooltip(null)}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  {dashboard?.avgScore >= 40 && dashboard?.avgScore <= 70 && (
-                    <div style={styles.flowNote}>
-                      (Flow Theory · Csikszentmihalyi, 1990)
-                    </div>
-                  )}
+                  {/* Etichete luni */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 14px)", gap: "3px", marginTop: 4, marginLeft: 14 }}>
+                    {Array.from({ length: 12 }, (_, weekIdx) => {
+                      const label = monthLabels.find((m) => m.col === weekIdx);
+                      return (
+                        <div key={weekIdx} style={{ overflow: "visible", whiteSpace: "nowrap" }}>
+                          {label && (
+                            <span style={{ fontSize: 9, color: "#9ca3af" }}>
+                              {label.label}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Legendă */}
+                <div style={styles.legend}>
+                  <span style={styles.legendText}>Mai puțin</span>
+                  {[0, 1, 2, 3, 4].map((lvl) => (
+                    <div
+                      key={lvl}
+                      style={{
+                        ...styles.legendCell,
+                        background: getHeatColor(lvl)
+                      }}
+                    />
+                  ))}
+                  <span style={styles.legendText}>Mai mult</span>
                 </div>
               </div>
+
+              {/* Rol potrivit — placeholder ML
+                  Va fi implementat cu cosine similarity pe catalogul de roluri
+                  Referință: Singla et al. (2025) doi:10.1186/s40537-025-01173-y */}
+              <div style={styles.card}>
+                <div style={styles.sectionLabel}>Rol potrivit</div>
+                <div style={styles.placeholderBox}>
+                  <div style={styles.placeholderText}>
+                    Recomandarea rolului va fi calculată automat pe baza
+                    competențelor tale folosind cosine similarity față de
+                    profilurile de rol din catalog.
+                  </div>
+                  <span style={styles.comingSoonBadge}>
+                    În curând · ML
+                  </span>
+                </div>
+              </div>
+
             </div>
 
+            {/* Dreapta: Top săptămânal
+                Relaționare SDT — Social Comparison Theory (Festinger, 1954)
+                Va fi populat cu K-Means clustering
+                Referință: Education Sciences MDPI (2025) doi:10.3390/educsci15070819 */}
             <div style={styles.card}>
-              <div style={styles.sectionLabel}>Focus săptămâna aceasta</div>
+              <div style={styles.sectionLabel}>Top săptămânal</div>
 
-              <div style={styles.focusTitle}>
-                {dashboard?.bestJob?.title
-                  ? "Skill prioritar pentru jobul țintă"
-                  : "Adaugă joburi"}
-              </div>
+              <LeaderboardRow rank={1} initials="AM" name="A. M." isCurrent={false} />
+              <LeaderboardRow rank={2} initials="CP" name="Tu" isCurrent={true} />
+              <LeaderboardRow rank={3} initials="RB" name="R. B." isCurrent={false} />
+              <LeaderboardRow rank={4} initials="MI" name="M. I." isCurrent={false} />
+              <LeaderboardRow rank={5} initials="DC" name="D. C." isCurrent={false} />
 
-              <div style={styles.focusText}>
-                {dashboard?.bestJob?.title
-                  ? `Jobul cu cel mai bun potențial este ${dashboard.bestJob.title}${
-                      dashboard.bestJob.company ? ` @ ${dashboard.bestJob.company}` : ""
-                    }.`
-                  : "După ce salvezi joburi, aici va apărea recomandarea principală a săptămânii."}
-              </div>
-
-              <div style={styles.miniStats}>
-                <div style={styles.miniCard}>
-                  <div style={styles.miniLabel}>🔥 Streak</div>
-                  <div style={styles.miniValue}>{dashboard?.streak || 0} zile</div>
-                </div>
-
-                <div style={styles.miniCard}>
-                  <div style={styles.miniLabel}>📈 Zile active</div>
-                  <div style={styles.miniValue}>{dashboard?.activeDays || 0}</div>
-                </div>
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #f3f4f6" }}>
+                <span style={styles.comingSoonBadge}>
+                  Date reale după K-Means clustering
+                </span>
               </div>
             </div>
-          </div>
 
-          <div style={styles.gridBottom}>
-            <div style={styles.card}>
-              <div style={styles.sectionLabel}>Activitate · ultimele 12 luni</div>
-
-              <div style={styles.activityStats}>
-                <div>
-                  <div style={styles.activityValue}>{dashboard?.totalActions || 0}</div>
-                  <div style={styles.activityLabel}>acțiuni totale</div>
-                </div>
-
-                <div>
-                  <div style={styles.activityValue}>🔥 {dashboard?.streak || 0}</div>
-                  <div style={styles.activityLabel}>streak curent</div>
-                </div>
-
-                <div>
-                  <div style={styles.activityValue}>{dashboard?.activeDays || 0}</div>
-                  <div style={styles.activityLabel}>zile active</div>
-                </div>
-              </div>
-
-              <Heatmap days={heatmapDays} />
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionLabel}>Top săptămânal · clusterul tău</div>
-
-              <div style={styles.leaderboardText}>
-                Temporar afișăm placeholder. După K-Means, aici vine leaderboard-ul real.
-              </div>
-
-              <div style={styles.leaderboardList}>
-                <LeaderboardRow rank={1} name="A.M." score={84} delta={18} />
-                <LeaderboardRow rank={2} name="R.P." score={79} delta={15} />
-                <LeaderboardRow
-                  rank={3}
-                  name="Tu"
-                  score={dashboard?.avgScore || 0}
-                  delta={12}
-                  isCurrent
-                />
-                <LeaderboardRow rank={4} name="M.I." score={63} delta={9} />
-                <LeaderboardRow rank={5} name="D.C." score={58} delta={6} />
-              </div>
-            </div>
           </div>
         </>
+      )}
+
+      {/* Tooltip heatmap */}
+      {tooltip && (
+        <div style={{
+          position: "fixed",
+          left: tooltip.x,
+          top: tooltip.y,
+          transform: "translate(-50%, -100%)",
+          background: "#111827",
+          color: "white",
+          padding: "8px 12px",
+          borderRadius: 8,
+          fontSize: 12,
+          lineHeight: 1.6,
+          whiteSpace: "pre-line",
+          pointerEvents: "none",
+          zIndex: 9999,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          maxWidth: 220
+        }}>
+          {tooltip.content}
+        </div>
       )}
     </AppLayout>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENTE
+// ─────────────────────────────────────────────────────────────────────────────
+
 function ScoreCircle({ score }) {
-  const radius = 54;
-  const stroke = 10;
-  const normalizedRadius = radius - stroke / 2;
-  const circumference = normalizedRadius * 2 * Math.PI;
-  const safeScore = Math.max(0, Math.min(100, Number(score || 0)));
-  const offset = circumference - (safeScore / 100) * circumference;
+  const r = 22;
+  const circ = 2 * Math.PI * r;
+  const safe = Math.max(0, Math.min(100, Number(score || 0)));
+  const offset = circ - (safe / 100) * circ;
 
   return (
-    <div style={styles.scoreCircleWrap}>
-      <svg height={radius * 2} width={radius * 2}>
+    <div style={{ position: "relative", width: 52, height: 52, flexShrink: 0 }}>
+      <svg width="52" height="52" viewBox="0 0 52 52">
+        <circle cx="26" cy="26" r={r} fill="none" stroke="#e5e7eb" strokeWidth="4" />
         <circle
-          stroke="#e5e7eb"
-          fill="transparent"
-          strokeWidth={stroke}
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-        />
-        <circle
-          stroke="#111827"
-          fill="transparent"
-          strokeWidth={stroke}
+          cx="26" cy="26" r={r}
+          fill="none" stroke="#378ADD" strokeWidth="4"
           strokeLinecap="round"
-          strokeDasharray={`${circumference} ${circumference}`}
-          style={{ strokeDashoffset: offset, transition: "stroke-dashoffset 0.9s ease" }}
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-          transform={`rotate(-90 ${radius} ${radius})`}
+          strokeDasharray={`${circ} ${circ}`}
+          strokeDashoffset={offset}
+          transform="rotate(-90 26 26)"
+          style={{ transition: "stroke-dashoffset 0.8s ease" }}
         />
       </svg>
-
-      <div style={styles.scoreCenter}>
-        <div style={styles.scoreNumber}>{safeScore}%</div>
-      </div>
     </div>
   );
 }
 
-function Heatmap({ days }) {
-  const safeDays = Array.isArray(days) ? days : [];
-
+function LeaderboardRow({ rank, initials, name, isCurrent }) {
   return (
-    <div style={styles.heatmapSection}>
-      <div style={styles.heatmapGrid}>
-        {safeDays.map((day) => (
-          <div
-            key={day.date}
-            title={`${day.date} · ${day.count} acțiuni`}
-            style={{
-              ...styles.heatmapCell,
-              background: getHeatColor(day.count)
-            }}
-          />
-        ))}
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "9px 8px",
+      borderRadius: 8,
+      marginBottom: 4,
+      background: isCurrent ? "#f5f3ff" : "transparent",
+      border: isCurrent ? "1px solid #e0dffe" : "1px solid transparent"
+    }}>
+      <span style={{
+        fontSize: 12,
+        fontWeight: 500,
+        color: isCurrent ? "#7F77DD" : "#9ca3af",
+        minWidth: 20
+      }}>
+        #{rank}
+      </span>
+      <div style={{
+        width: 28, height: 28, borderRadius: "50%",
+        background: isCurrent ? "#EEEDFE" : "#f3f4f6",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, fontWeight: 500,
+        color: isCurrent ? "#534AB7" : "#6b7280",
+        flexShrink: 0
+      }}>
+        {initials}
       </div>
-
-      <div style={styles.legend}>
-        <span style={styles.legendText}>Mai puțin</span>
-        {[0, 1, 2, 3, 4].map((level) => (
-          <span
-            key={level}
-            style={{
-              ...styles.legendCell,
-              background: getHeatColor(level)
-            }}
-          />
-        ))}
-        <span style={styles.legendText}>Mai mult</span>
-      </div>
+      <span style={{
+        fontSize: 13,
+        fontWeight: isCurrent ? 500 : 400,
+        color: isCurrent ? "#111827" : "#6b7280",
+        flex: 1
+      }}>
+        {name}
+      </span>
+      <span style={{ fontSize: 12, color: "#9ca3af" }}>—</span>
     </div>
   );
 }
 
-function LeaderboardRow({ rank, name, score, delta, isCurrent = false }) {
-  const safeScore = Math.max(0, Math.min(100, Number(score || 0)));
-
-  return (
-    <div
-      style={{
-        ...styles.leaderboardRow,
-        ...(isCurrent ? styles.leaderboardRowActive : {})
-      }}
-    >
-      <div style={styles.leaderboardRank}>{rank}</div>
-      <div style={styles.leaderboardName}>{name}</div>
-      <div style={styles.leaderboardBarWrap}>
-        <div style={{ ...styles.leaderboardBar, width: `${safeScore}%` }} />
-      </div>
-      <div style={styles.leaderboardScore}>{safeScore}%</div>
-      <div style={styles.leaderboardDelta}>+{delta}</div>
-    </div>
-  );
-}
-
-function generateEmptyHeatmap() {
-  const days = [];
-  const today = new Date();
-
-  for (let i = 364; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    days.push({ date: formatDate(date), count: 0 });
-  }
-
-  return days;
-}
-
-function generateHeatmapFromActivity(activityMap) {
-  const days = [];
-  const today = new Date();
-
-  for (let i = 364; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    const key = formatDate(date);
-
-    days.push({
-      date: key,
-      count: activityMap.get(key) || 0
-    });
-  }
-
-  return days;
-}
-
-function formatDate(date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getHeatColor(count) {
-  const safeCount = Number(count || 0);
-  if (safeCount <= 0) return "#f3f4f6";
-  if (safeCount === 1) return "#d1fae5";
-  if (safeCount === 2) return "#86efac";
-  if (safeCount === 3) return "#4ade80";
-  return "#16a34a";
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// STILURI
+// ─────────────────────────────────────────────────────────────────────────────
 
 const styles = {
-  message: {
-    marginBottom: 16,
-    padding: 12,
-    borderRadius: 12,
-    background: "#ffffff",
-    color: "#374151"
+  header: {
+    marginBottom: 20,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between"
   },
-  gridTop: {
-    display: "grid",
-    gridTemplateColumns: "1.2fr 0.8fr",
-    gap: 20,
-    marginBottom: 20
+  greeting: {
+    fontSize: 24,
+    fontWeight: 700,
+    color: "#111827",
+    marginBottom: 4
   },
-  gridBottom: {
+  dateStr: {
+    fontSize: 14,
+    color: "#9ca3af",
+    textTransform: "capitalize"
+  },
+  gridThree: {
     display: "grid",
-    gridTemplateColumns: "1.4fr 0.8fr",
-    gap: 20
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 14,
+    marginBottom: 16
+  },
+  gridTwo: {
+    display: "grid",
+    gridTemplateColumns: "1fr 300px",
+    gap: 16,
+    alignItems: "start"
   },
   card: {
     background: "white",
     borderRadius: 16,
-    padding: 24,
+    padding: 20,
     boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
   },
-  sectionLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    marginBottom: 20
-  },
-  scoreRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 28,
-    flexWrap: "wrap"
-  },
-  scoreCircleWrap: {
-    position: "relative",
-    width: 108,
-    height: 108
-  },
-  scoreCenter: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  scoreNumber: {
-    fontSize: 28,
-    fontWeight: 800,
-    color: "#111827"
-  },
-  scoreTextBlock: {
-    flex: 1,
-    minWidth: 240
-  },
-  scoreMessage: {
-    fontSize: 26,
-    lineHeight: 1.35,
-    fontWeight: 700,
-    color: "#111827"
-  },
-  flowNote: {
-    marginTop: 12,
-    fontSize: 14,
-    color: "#6b7280",
-    fontStyle: "italic"
-  },
-  focusTitle: {
-    fontSize: 28,
-    fontWeight: 800,
-    color: "#111827",
-    marginBottom: 12
-  },
-  focusText: {
-    fontSize: 16,
-    lineHeight: 1.6,
-    color: "#4b5563",
-    marginBottom: 22
-  },
-  miniStats: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14
-  },
-  miniCard: {
-    border: "1px solid #e5e7eb",
+  metricCard: {
+    background: "#f9fafb",
     borderRadius: 12,
-    padding: 16,
-    background: "#f9fafb"
+    padding: "16px 18px",
+    border: "1px solid #e5e7eb"
   },
-  miniLabel: {
-    color: "#6b7280",
+  metricLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#9ca3af",
+    textTransform: "uppercase",
+    letterSpacing: 1.2
+  },
+  metricValue: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#111827",
+    lineHeight: 1.2
+  },
+  metricSub: {
     fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1
+    color: "#9ca3af",
+    marginTop: 3
   },
-  miniValue: {
-    marginTop: 8,
-    fontSize: 24,
+  bigNumber: {
+    fontSize: 42,
     fontWeight: 800,
-    color: "#111827"
+    lineHeight: 1,
+    flexShrink: 0
   },
-  activityStats: {
-    display: "flex",
-    gap: 36,
-    marginBottom: 18,
-    flexWrap: "wrap"
-  },
-  activityValue: {
-    fontSize: 32,
-    fontWeight: 800,
-    color: "#111827"
-  },
-  activityLabel: {
-    marginTop: 4,
-    color: "#6b7280",
-    fontSize: 13,
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#9ca3af",
     textTransform: "uppercase",
-    letterSpacing: 1
+    letterSpacing: 1.2,
+    marginBottom: 14
   },
-  heatmapSection: {
-    marginTop: 8
+
+  // ── Heatmap ──────────────────────────────────────────
+  heatmapWrap: {
+    marginBottom: 8
   },
   heatmapGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(53, 12px)",
-    gap: 4,
-    alignItems: "center"
+    display: "flex",
+    gap: 3
   },
-  heatmapCell: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    border: "1px solid rgba(0,0,0,0.04)"
+  heatmapCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 3
+  },
+  heatCell: {
+    width: 11,
+    height: 11,
+    borderRadius: 2
+  },
+  monthLabels: {
+    display: "grid",
+    gridTemplateColumns: "repeat(12, 1fr)",
+    marginTop: 6
+  },
+  monthLabel: {
+    fontSize: 10,
+    color: "#9ca3af"
   },
   legend: {
     display: "flex",
     alignItems: "center",
-    gap: 8,
-    justifyContent: "flex-end",
-    marginTop: 16
+    gap: 4,
+    marginTop: 10
   },
   legendCell: {
-    width: 12,
-    height: 12,
-    borderRadius: 3
+    width: 10,
+    height: 10,
+    borderRadius: 2
   },
   legendText: {
-    color: "#6b7280",
-    fontSize: 12
+    fontSize: 11,
+    color: "#9ca3af",
+    marginRight: 2,
+    marginLeft: 2
   },
-  leaderboardText: {
-    color: "#6b7280",
-    lineHeight: 1.6,
-    marginBottom: 16
-  },
-  leaderboardList: {
+
+  // ── Placeholder ──────────────────────────────────────
+  placeholderBox: {
+    padding: 14,
+    background: "#f9fafb",
+    borderRadius: 10,
+    border: "1px dashed #d1d5db",
     display: "flex",
     flexDirection: "column",
-    gap: 12
+    gap: 10
   },
-  leaderboardRow: {
-    display: "grid",
-    gridTemplateColumns: "28px 48px 1fr 52px 40px",
-    gap: 10,
-    alignItems: "center",
-    padding: "10px 12px",
-    borderRadius: 14,
-    background: "#f9fafb"
+  placeholderText: {
+    fontSize: 13,
+    color: "#9ca3af",
+    lineHeight: 1.6
   },
-  leaderboardRowActive: {
-    border: "1px solid #86efac",
-    background: "#ecfdf5"
-  },
-  leaderboardRank: {
-    color: "#6b7280",
-    fontWeight: 700
-  },
-  leaderboardName: {
-    color: "#111827",
-    fontWeight: 700
-  },
-  leaderboardBarWrap: {
-    height: 8,
-    borderRadius: 999,
-    background: "#e5e7eb",
-    overflow: "hidden"
-  },
-  leaderboardBar: {
-    height: "100%",
-    borderRadius: 999,
-    background: "#111827"
-  },
-  leaderboardScore: {
-    color: "#111827",
-    fontWeight: 700,
-    textAlign: "right"
-  },
-  leaderboardDelta: {
-    color: "#16a34a",
-    fontWeight: 700,
-    textAlign: "right"
+  comingSoonBadge: {
+    fontSize: 11,
+    fontWeight: 600,
+    padding: "3px 9px",
+    borderRadius: 4,
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    whiteSpace: "nowrap",
+    alignSelf: "flex-start"
   }
 };

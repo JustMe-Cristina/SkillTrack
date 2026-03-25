@@ -199,6 +199,7 @@ export default function Analytics() {
 
                 </div>
               </div>
+
             </div>
 
           </>
@@ -206,22 +207,15 @@ export default function Analytics() {
       </div>
 
       {/* ════════════════════════════════════════════════
-          SECȚIUNEA 2 — PROFIL VS PIAȚĂ (expandabil)
-
-          Fiecare categorie e un rând cu bare comparative.
-          Click pe categorie → se expandează și arată
-          fiecare skill individual cu statusul lui:
-            ✓ verde  = ai tu + cer joburile
-            ✓ gri    = ai tu, dar nu cer joburile
-            ✗ roșu   = nu ai, dar cer joburile
-
+          SECȚIUNEA 2 — PROFIL VS PIAȚĂ cu bar chart
+          Metrica: câte din skills CERUTE le ai tu
+          acoperire = skills cerute pe care le ai / total skills cerute
           Referință: Social Comparison Theory (Festinger, 1954)
-                     Paulsen & Lindsay (2024) doi:10.1007/s10639-023-12401-4
       ════════════════════════════════════════════════ */}
       <div style={styles.card}>
         <div style={styles.sectionLabel}>Profilul tău față de piață</div>
         <div style={styles.sectionSubtitle}>
-          Apasă pe o categorie pentru a vedea skill-urile individuale
+          Cât din ce cer joburile tale acoperi — apasă pe categorie pentru detalii
         </div>
 
         {loadingProfile ? (
@@ -235,129 +229,118 @@ export default function Analytics() {
             {profileData.categories.map((cat) => {
               const color = CATEGORY_COLORS[cat.category] || "#6b7280";
               const isExpanded = expandedCategories.has(cat.category);
+              const pct = cat.coveragePercent ?? 0;
+              const hasGap = cat.missingSkills && cat.missingSkills.length > 0;
+
+              // Culoarea barei: roșu dacă lipsesc skills cerute, verde dacă acoperit
+              const barColor = hasGap
+                ? pct < 50 ? "#dc2626" : "#d97706"
+                : "#16a34a";
 
               return (
                 <div key={cat.category} style={styles.categoryBlock}>
-
-                  {/* ── Header categorie — click pentru expandare ── */}
                   <button
                     style={styles.categoryHeader}
                     onClick={() => toggleCategory(cat.category)}
                   >
-                    {/* Stânga: nume + info în cuvinte */}
                     <div style={styles.categoryLeft}>
-                      <div style={styles.categoryNameRow}>
+
+                      {/* Rândul 1: nume + procent */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                         <span style={{ ...styles.categoryName, color }}>
                           {cat.category}
                         </span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>
+                          {pct}%
+                        </span>
                       </div>
 
-                      <div style={styles.categoryStats}>
-                        {cat.gap >= 0 ? (
-                          <span style={{ color: "#16a34a", fontWeight: 600, fontSize: 13 }}>
-                            Acoperi {cat.userHas} din {cat.marketNeeds || cat.totalSkills} skills cerute · ești peste piață ✓
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 13, color: "#6b7280" }}>
-                            Acoperi{" "}
-                            <span style={{ color, fontWeight: 700 }}>{cat.userHas}</span>
-                            {" "}din{" "}
-                            <span style={{ color: "#374151", fontWeight: 700 }}>{cat.marketNeeds}</span>
-                            {" "}skills cerute · lipsesc{" "}
-                            <span style={{ color: "#dc2626", fontWeight: 700 }}>
-                              {cat.marketNeeds - cat.userHas}
+                      {/* Bara de acoperire */}
+                      <div style={styles.coverageTrack}>
+                        <div style={{
+                          ...styles.coverageFill,
+                          width: `${pct}%`,
+                          background: barColor,
+                          transition: "width 0.6s ease"
+                        }} />
+                      </div>
+
+                      {/* Rândul 2: text clar */}
+                      <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                        {hasGap ? (
+                          <>
+                            <span style={{ color: barColor, fontWeight: 600 }}>
+                              {cat.coveredRequired}/{cat.marketNeeds} skills cerute acoperite
                             </span>
+                            {" · lipsesc: "}
+                            <span style={{ color: "#dc2626", fontWeight: 600 }}>
+                              {cat.missingSkills.join(", ")}
+                            </span>
+                          </>
+                        ) : (
+                          <span style={{ color: "#16a34a", fontWeight: 600 }}>
+                            Toate {cat.marketNeeds} skills cerute acoperite ✓
+                            {cat.extraSkills && cat.extraSkills.length > 0 && (
+                              <span style={{ color: "#9ca3af", fontWeight: 400 }}>
+                                {" · în plus: "}{cat.extraSkills.slice(0, 2).join(", ")}
+                                {cat.extraSkills.length > 2 ? ` +${cat.extraSkills.length - 2}` : ""}
+                              </span>
+                            )}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Dreapta: săgeată expandare */}
                     <div style={styles.categoryRight}>
-                      <div style={{ color: "#9ca3af", fontSize: 12 }}>
-                        {isExpanded ? "▲ închide" : "▼ detalii"}
+                      <div style={{ color: "#9ca3af", fontSize: 11 }}>
+                        {isExpanded ? "▲" : "▼"}
                       </div>
                     </div>
                   </button>
 
-                  {/* ── Conținut expandat — skills individuale ── */}
+                  {/* Conținut expandat */}
                   {isExpanded && (
                     <div style={styles.skillsExpanded}>
-
-                      {/* Legendă */}
                       <div style={styles.legend}>
                         <span style={styles.legendItem}>
                           <span style={{ color: "#16a34a", fontWeight: 700 }}>✓</span>
-                          {" "}ai + cer joburile
+                          &nbsp;ai + cer joburile
                         </span>
                         <span style={styles.legendItem}>
                           <span style={{ color: "#9ca3af" }}>✓</span>
-                          {" "}ai, dar nu cer joburile
+                          &nbsp;ai, dar nu cer joburile
                         </span>
                         <span style={styles.legendItem}>
                           <span style={{ color: "#dc2626", fontWeight: 700 }}>✗</span>
-                          {" "}nu ai, dar cer joburile
+                          &nbsp;nu ai, dar cer joburile
                         </span>
                       </div>
-
-                      {/* Lista skills */}
                       <div style={styles.skillsList}>
                         {cat.skills.map((skill) => {
                           const bothHave = skill.userHas && skill.marketNeeds;
                           const onlyUser = skill.userHas && !skill.marketNeeds;
                           const onlyMarket = !skill.userHas && skill.marketNeeds;
-
                           return (
-                            <div
-                              key={skill.id}
-                              style={{
-                                ...styles.skillRow,
-                                background: onlyMarket
-                                  ? "#fef2f2"
-                                  : bothHave
-                                    ? "#f0fdf4"
-                                    : "#f9fafb",
-                                borderColor: onlyMarket
-                                  ? "#fecaca"
-                                  : bothHave
-                                    ? "#bbf7d0"
-                                    : "#e5e7eb"
-                              }}
-                            >
-                              {/* Iconița */}
+                            <div key={skill.id} style={{
+                              ...styles.skillRow,
+                              background: onlyMarket ? "#fef2f2" : bothHave ? "#f0fdf4" : "#f9fafb",
+                              borderColor: onlyMarket ? "#fecaca" : bothHave ? "#bbf7d0" : "#e5e7eb"
+                            }}>
                               <span style={styles.skillIcon}>
-                                {bothHave && (
-                                  <span style={{ color: "#16a34a", fontWeight: 700 }}>✓</span>
-                                )}
-                                {onlyUser && (
-                                  <span style={{ color: "#9ca3af" }}>✓</span>
-                                )}
-                                {onlyMarket && (
-                                  <span style={{ color: "#dc2626", fontWeight: 700 }}>✗</span>
-                                )}
+                                {bothHave && <span style={{ color: "#16a34a", fontWeight: 700 }}>✓</span>}
+                                {onlyUser && <span style={{ color: "#9ca3af" }}>✓</span>}
+                                {onlyMarket && <span style={{ color: "#dc2626", fontWeight: 700 }}>✗</span>}
                               </span>
-
-                              {/* Numele skill-ului */}
                               <span style={{
                                 ...styles.skillRowName,
-                                color: onlyMarket
-                                  ? "#991b1b"
-                                  : bothHave
-                                    ? "#166534"
-                                    : "#6b7280",
+                                color: onlyMarket ? "#991b1b" : bothHave ? "#166534" : "#6b7280",
                                 fontWeight: onlyMarket ? 600 : 400
                               }}>
                                 {skill.name}
                               </span>
-
-                              {/* Tag-uri */}
                               <div style={styles.skillTags}>
-                                {skill.userHas && (
-                                  <span style={styles.tagUser}>în profilul tău</span>
-                                )}
-                                {skill.marketNeeds && (
-                                  <span style={styles.tagMarket}>cerut de joburi</span>
-                                )}
+                                {skill.userHas && <span style={styles.tagUser}>în profilul tău</span>}
+                                {skill.marketNeeds && <span style={styles.tagMarket}>cerut de joburi</span>}
                               </div>
                             </div>
                           );
@@ -369,16 +352,10 @@ export default function Analytics() {
               );
             })}
 
-            {/* Insight automat din date */}
             {profileData.insight && (
               <div style={styles.insightBox}>
                 <span style={styles.insightIcon}>📊</span>
-                <span style={styles.insightText}>
-                  {profileData.topGapCategory
-                    ? `Categoria ${profileData.topGapCategory.category} are cel mai mare decalaj față de joburile tale — îți lipsesc ${Math.abs(profileData.topGapCategory.marketNeeds - profileData.topGapCategory.userHas)} skills cerute. Concentrează-te pe skills din această categorie.`
-                    : profileData.insight
-                  }
-                </span>
+                <span style={styles.insightText}>{profileData.insight}</span>
               </div>
             )}
           </>
@@ -595,6 +572,16 @@ const styles = {
 
   // ── Profil vs Piață ─────────────────────────────
 
+  coverageTrack: {
+    height: 8,
+    background: "#f3f4f6",
+    borderRadius: 999,
+    overflow: "hidden"
+  },
+  coverageFill: {
+    height: "100%",
+    borderRadius: 999
+  },
   categoryBlock: {
     border: "1px solid #e5e7eb",
     borderRadius: 12,

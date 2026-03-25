@@ -2,20 +2,14 @@ const db = require("../config/db");
 
 async function recalculateJobsForUser(userId) {
   const [jobs] = await db.query(
-    `SELECT id
-     FROM jobs
-     WHERE user_id = ?`,
+    `SELECT id FROM jobs WHERE user_id = ?`,
     [userId]
   );
 
-  if (jobs.length === 0) {
-    return;
-  }
+  if (jobs.length === 0) return;
 
   const [userSkillRows] = await db.query(
-    `SELECT skill_id
-     FROM user_skills
-     WHERE user_id = ?`,
+    `SELECT skill_id FROM user_skills WHERE user_id = ?`,
     [userId]
   );
 
@@ -23,9 +17,7 @@ async function recalculateJobsForUser(userId) {
 
   for (const job of jobs) {
     const [requiredSkills] = await db.query(
-      `SELECT skill_id
-       FROM job_skills
-       WHERE job_id = ?`,
+      `SELECT skill_id FROM job_skills WHERE job_id = ?`,
       [job.id]
     );
 
@@ -42,14 +34,10 @@ async function recalculateJobsForUser(userId) {
       totalSkills === 0 ? 0 : Math.round((matchedSkills / totalSkills) * 100);
 
     await db.query(
-      `UPDATE jobs
-       SET match_score = ?
-       WHERE id = ? AND user_id = ?`,
+      `UPDATE jobs SET match_score = ? WHERE id = ? AND user_id = ?`,
       [newScore, job.id, userId]
     );
   }
 }
 
-module.exports = {
-  recalculateJobsForUser
-};
+module.exports = { recalculateJobsForUser };

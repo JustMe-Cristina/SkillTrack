@@ -131,15 +131,14 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       for (const step of steps) {
         await db.query(
           `INSERT INTO roadmap_steps
-            (roadmap_id, skill_id, step_order, title, description, estimated_days, status)
-           VALUES (?, ?, ?, ?, ?, ?, 'NOT_STARTED')`,
+            (roadmap_id, skill_id, step_order, title, description, status)
+           VALUES (?, ?, ?, ?, ?, 'NOT_STARTED')`,
           [
             roadmapId,
             skill.skill_id,
             stepOrder,
             step.title,
-            step.description,
-            step.estimated_days
+            step.description
           ]
         );
 
