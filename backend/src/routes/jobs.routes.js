@@ -1,199 +1,10 @@
 const express = require("express");
 const db = require("../config/db");
 const auth = require("../middleware/auth.middleware");
-const { skillMatchesText } = require("../utils/skillAliases");
 const { logActivity } = require("../utils/activityLogger");
+const { analyzeJobData } = require("../services/jobAnalysis.service");
 
 const router = express.Router();
-
-function detectWorkMode(description) {
-  const text = String(description || "").toLowerCase();
-
-  if (text.includes("hybrid") || text.includes("hibrid")) {
-    return "HYBRID";
-  }
-
-  if (
-    text.includes("remote") ||
-    text.includes("work from home") ||
-    text.includes("fully remote")
-  ) {
-    return "REMOTE";
-  }
-
-  if (
-    text.includes("on-site") ||
-    text.includes("onsite") ||
-    text.includes("on site") ||
-    text.includes("la fața locului") ||
-    text.includes("la fata locului")
-  ) {
-    return "ONSITE";
-  }
-
-  return null;
-}
-
-function detectEmploymentType(description) {
-  const text = String(description || "").toLowerCase();
-
-  if (text.includes("internship")) {
-    return "INTERNSHIP";
-  }
-
-  if (
-    text.includes("part-time") ||
-    text.includes("part time") ||
-    text.includes("parttime")
-  ) {
-    return "PART_TIME";
-  }
-
-  if (
-    text.includes("full-time") ||
-    text.includes("full time") ||
-    text.includes("fulltime")
-  ) {
-    return "FULL_TIME";
-  }
-
-  return null;
-}
-
-function detectLocation(description) {
-  const text = String(description || "").toLowerCase();
-
-  const cityMap = [
-    { keywords: ["cluj-napoca", "cluj napoca", "cluj"], value: "Cluj-Napoca" },
-    { keywords: ["bucurești", "bucuresti"], value: "București" },
-    { keywords: ["timișoara", "timisoara"], value: "Timișoara" },
-    { keywords: ["iași", "iasi"], value: "Iași" },
-    { keywords: ["sibiu"], value: "Sibiu" },
-    { keywords: ["brașov", "brasov"], value: "Brașov" },
-    { keywords: ["oradea"], value: "Oradea" },
-    { keywords: ["berlin"], value: "Berlin" },
-    { keywords: ["amsterdam"], value: "Amsterdam" },
-    { keywords: ["london"], value: "Londra" },
-    { keywords: ["munich", "münchen"], value: "Munchen" },
-    { keywords: ["dublin"], value: "Dublin" }
-  ];
-
-  for (const city of cityMap) {
-    for (const keyword of city.keywords) {
-      if (text.includes(keyword)) {
-        return city.value;
-      }
-    }
-  }
-
-  if (text.includes("remote romania") || text.includes("remote românia")) {
-    return "Remote (România)";
-  }
-
-  if (text.includes("romania") || text.includes("românia")) {
-    return "România";
-  }
-
-  return null;
-}
-
-async function analyzeJobData(
-  userId,
-  title,
-  company,
-  location,
-  work_mode,
-  employment_type,
-  description
-) {
-  const text = String(description || "").toLowerCase();
-
-  const [skills] = await db.query(
-    "SELECT id, name, category FROM skills ORDER BY name ASC"
-  );
-
-  const detected = skills.filter((skill) =>
-    skillMatchesText(skill.name, text)
-  );
-
-  const detectedIds = detected.map((s) => Number(s.id));
-  const userSkillIds = new Set();
-
-  if (detectedIds.length > 0) {
-    const placeholders = detectedIds.map(() => "?").join(",");
-
-    const [userSkillRows] = await db.query(
-      `SELECT skill_id
-       FROM user_skills
-       WHERE user_id = ? AND skill_id IN (${placeholders})`,
-      [userId, ...detectedIds]
-    );
-
-    for (const row of userSkillRows) {
-      userSkillIds.add(Number(row.skill_id));
-    }
-  }
-
-  const matches = [];
-  const gaps = [];
-  const detectedSkills = [];
-
-  for (const skill of detected) {
-    const hasSkill = userSkillIds.has(Number(skill.id));
-
-    detectedSkills.push({
-      skillId: Number(skill.id),
-      name: skill.name,
-      category: skill.category
-    });
-
-    if (hasSkill) {
-      matches.push({
-        skill: skill.name,
-        skillId: Number(skill.id)
-      });
-    } else {
-      gaps.push({
-        skill: skill.name,
-        skillId: Number(skill.id)
-      });
-    }
-  }
-
-  const totalSkills = detected.length;
-  const matchedSkills = matches.length;
-
-  const score =
-    totalSkills === 0 ? 0 : Math.round((matchedSkills / totalSkills) * 100);
-
-  const detectedLocation =
-    location && String(location).trim()
-      ? String(location).trim()
-      : detectLocation(description);
-
-  const detectedWorkMode =
-    work_mode && String(work_mode).trim()
-      ? work_mode
-      : detectWorkMode(description);
-
-  const detectedEmploymentType =
-    employment_type && String(employment_type).trim()
-      ? employment_type
-      : detectEmploymentType(description);
-
-  return {
-    title,
-    company,
-    location: detectedLocation,
-    work_mode: detectedWorkMode,
-    employment_type: detectedEmploymentType,
-    description,
-    detectedSkills,
-    score,
-    matches,
-    gaps
-  };
-}
 
 /**
  * POST /api/jobs/analyze
@@ -219,7 +30,7 @@ router.post("/analyze", auth, async (req, res) => {
   }
 
   try {
-    const analysis = await analyzeJobData(
+    const analysis = await analyzeJobData({
       userId,
       title,
       company,
@@ -227,7 +38,7 @@ router.post("/analyze", auth, async (req, res) => {
       work_mode,
       employment_type,
       description
-    );
+    });
 
     await logActivity(userId, "JOB_ANALYZED", "job", null);
 

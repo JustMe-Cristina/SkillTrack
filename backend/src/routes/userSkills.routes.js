@@ -1,32 +1,31 @@
 const express = require("express");
 const db = require("../config/db");
 const auth = require("../middleware/auth.middleware");
-
-const { recalculateJobsForUser } = require("../services/jobMatch.service");
 const { logActivity } = require("../utils/activityLogger");
+const { recalculateJobsForUser } = require("../services/jobMatch.service");
 
 const router = express.Router();
 
 /**
  * GET /api/user-skills
- * Listează competențele utilizatorului
+ * Returnează competențele utilizatorului
  */
 router.get("/", auth, async (req, res) => {
   const userId = req.user.userId;
 
   try {
     const [rows] = await db.query(
-      `SELECT
-         us.skill_id,
-         us.level,
-         us.confidence,
-         s.name,
-         s.category,
-         s.weight
-       FROM user_skills us
-       JOIN skills s ON s.id = us.skill_id
-       WHERE us.user_id = ?
-       ORDER BY s.name ASC`,
+      `
+      SELECT
+        us.skill_id AS skillId,
+        us.level,
+        s.name,
+        s.category
+      FROM user_skills us
+      JOIN skills s ON s.id = us.skill_id
+      WHERE us.user_id = ?
+      ORDER BY s.category ASC, s.name ASC
+      `,
       [userId]
     );
 
@@ -44,110 +43,99 @@ router.get("/", auth, async (req, res) => {
 });
 
 /**
- * POST /api/user-skills/import-from-cv
- * Adaugă competențe confirmate din CV
- * body: { skills: [1, 2, 3] }
- */
-router.post("/import-from-cv", auth, async (req, res) => {
-  const userId = req.user.userId;
-  const { skills } = req.body;
-
-  if (!Array.isArray(skills) || skills.length === 0) {
-    return res.status(400).json({
-      ok: false,
-      error: "No skills provided"
-    });
-  }
-
-  try {
-    let addedCount = 0;
-
-    for (const rawSkillId of skills) {
-      const skillId = Number(rawSkillId);
-
-      if (!Number.isFinite(skillId)) {
-        continue;
-      }
-
-      try {
-        await db.query(
-          `INSERT INTO user_skills (user_id, skill_id, level, confidence)
-           VALUES (?, ?, ?, ?)`,
-          [userId, skillId, 1, 3]
-        );
-
-        addedCount += 1;
-
-        await logActivity(userId, "SKILL_ADDED", "skill", skillId);
-      } catch (err) {
-        if (err.code !== "ER_DUP_ENTRY") {
-          throw err;
-        }
-      }
-    }
-
-    await recalculateJobsForUser(userId);
-
-    return res.json({
-      ok: true,
-      message: "Skills imported",
-      addedCount
-    });
-  } catch (err) {
-    console.error("IMPORT USER SKILLS FROM CV ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "Server error"
-    });
-  }
-});
-
-/**
  * POST /api/user-skills
- * Adaugă o competență utilizatorului
+ * Adaugă manual o competență
  */
 router.post("/", auth, async (req, res) => {
   const userId = req.user.userId;
-  const { skillId, level, confidence } = req.body;
+  const rawSkillId = req.body.skillId ?? req.body.skill_id ?? req.body.id;
+  const rawLevel = req.body.level;
 
-  const numericSkillId = Number(skillId);
+  const skillId = Number(rawSkillId);
+  const level = Number(rawLevel ?? 2);
 
-  if (!Number.isFinite(numericSkillId)) {
+  if (!Number.isFinite(skillId) || skillId <= 0) {
     return res.status(400).json({
       ok: false,
       error: "Missing or invalid skillId"
     });
   }
 
+  if (![1, 2, 3].includes(level)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid level"
+    });
+  }
+
+  let connection;
+
   try {
-    const [existing] = await db.query(
-      `SELECT *
-       FROM user_skills
-       WHERE user_id = ? AND skill_id = ?`,
-      [userId, numericSkillId]
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    const [skillRows] = await connection.query(
+      `SELECT id, name FROM skills WHERE id = ?`,
+      [skillId]
     );
 
-    if (existing.length > 0) {
-      return res.status(400).json({
+    if (skillRows.length === 0) {
+      await connection.rollback();
+      connection.release();
+
+      return res.status(404).json({
         ok: false,
-        error: "Skill already exists"
+        error: "Skill not found"
       });
     }
 
-    await db.query(
-      `INSERT INTO user_skills (user_id, skill_id, level, confidence)
-       VALUES (?, ?, ?, ?)`,
-      [userId, numericSkillId, level || 1, confidence || 3]
+    const skillName = skillRows[0].name;
+
+    const [existingRows] = await connection.query(
+      `SELECT user_id, skill_id
+       FROM user_skills
+       WHERE user_id = ? AND skill_id = ?`,
+      [userId, skillId]
     );
 
+    if (existingRows.length > 0) {
+      await connection.rollback();
+      connection.release();
+
+      return res.status(409).json({
+        ok: false,
+        error: "Skill already added"
+      });
+    }
+
+    await connection.query(
+      `INSERT INTO user_skills (user_id, skill_id, level)
+       VALUES (?, ?, ?)`,
+      [userId, skillId, level]
+    );
+
+    await connection.commit();
+    connection.release();
+    connection = null;
+
     await recalculateJobsForUser(userId);
-    await logActivity(userId, "SKILL_ADDED", "skill", numericSkillId);
+    await logActivity(userId, "SKILL_ADDED", "skill", skillId);
 
     return res.status(201).json({
       ok: true,
-      message: "Skill added"
+      message: "Skill added successfully",
+      skill: {
+        skillId,
+        name: skillName,
+        level
+      }
     });
   } catch (err) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
+
     console.error("ADD USER SKILL ERROR:", err);
     return res.status(500).json({
       ok: false,
@@ -157,86 +145,17 @@ router.post("/", auth, async (req, res) => {
 });
 
 /**
- * PATCH /api/user-skills/:skillId
- * Actualizează nivelul unei competențe personale
- */
-router.patch("/:skillId", auth, async (req, res) => {
-  const userId = req.user.userId;
-  const skillId = Number(req.params.skillId);
-  const { level, confidence } = req.body;
-
-  if (!Number.isFinite(skillId)) {
-    return res.status(400).json({
-      ok: false,
-      error: "Invalid skill id"
-    });
-  }
-
-  if (level === undefined && confidence === undefined) {
-    return res.status(400).json({
-      ok: false,
-      error: "Nothing to update"
-    });
-  }
-
-  try {
-    const fields = [];
-    const values = [];
-
-    if (level !== undefined) {
-      fields.push("level = ?");
-      values.push(Number(level));
-    }
-
-    if (confidence !== undefined) {
-      fields.push("confidence = ?");
-      values.push(Number(confidence));
-    }
-
-    values.push(userId, skillId);
-
-    const [result] = await db.query(
-      `UPDATE user_skills
-       SET ${fields.join(", ")}
-       WHERE user_id = ? AND skill_id = ?`,
-      values
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        ok: false,
-        error: "Skill not found"
-      });
-    }
-
-    await recalculateJobsForUser(userId);
-    await logActivity(userId, "SKILL_UPDATED", "skill", skillId);
-
-    return res.json({
-      ok: true,
-      message: "Skill updated"
-    });
-  } catch (err) {
-    console.error("PATCH USER SKILL ERROR:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "Server error"
-    });
-  }
-});
-
-/**
  * DELETE /api/user-skills/:skillId
- * Șterge o competență personală
+ * Șterge o competență din profilul utilizatorului
  */
 router.delete("/:skillId", auth, async (req, res) => {
   const userId = req.user.userId;
   const skillId = Number(req.params.skillId);
 
-  if (!Number.isFinite(skillId)) {
+  if (!Number.isFinite(skillId) || skillId <= 0) {
     return res.status(400).json({
       ok: false,
-      error: "Invalid skill id"
+      error: "Invalid skillId"
     });
   }
 
@@ -250,16 +169,16 @@ router.delete("/:skillId", auth, async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Skill not found"
+        error: "Skill not found in user profile"
       });
     }
 
     await recalculateJobsForUser(userId);
-    await logActivity(userId, "SKILL_DELETED", "skill", skillId);
+    await logActivity(userId, "SKILL_REMOVED", "skill", skillId);
 
     return res.json({
       ok: true,
-      message: "Skill deleted"
+      message: "Skill removed successfully"
     });
   } catch (err) {
     console.error("DELETE USER SKILL ERROR:", err);

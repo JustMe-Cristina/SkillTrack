@@ -1,148 +1,316 @@
 const skillAliases = {
   // ── Data ─────────────────────────────────────────────────────────
-  "SQL": [
-    "sql", "structured query language", "queries", "database queries",
-    "microsoft sql", "ms sql", "t-sql", "tsql", "sql server",
-    "stored procedures", "sql queries"
+  SQL: [
+    "sql",
+    "structured query language",
+    "database queries",
+    "sql queries",
+    "stored procedures"
   ],
-  "Python": [
-    "python", "python3", "python 3", "scripting", "automation scripts",
-    "python code", "python scripting"
+  Python: [
+    "python",
+    "python3",
+    "python 3",
+    "python code",
+    "python scripting",
+    "automation scripts"
   ],
   "Power BI": [
-    "power bi", "powerbi", "power-bi", "bi dashboards",
-    "power bi reports", "power bi dashboards"
+    "power bi",
+    "powerbi",
+    "power-bi",
+    "power bi reports",
+    "power bi dashboards",
+    "dax",
+    "power query"
   ],
-  "Tableau": [
-    "tableau", "tableau dashboards", "tableau reports"
+  Tableau: [
+    "tableau",
+    "tableau dashboards",
+    "tableau reports"
   ],
-  "Excel": [
-    "excel", "microsoft excel", "spreadsheets", "ms excel"
+  Excel: [
+    "excel",
+    "microsoft excel",
+    "spreadsheets",
+    "ms excel",
+    "pivot tables",
+    "vlookup",
+    "advanced excel"
   ],
   "Data Analysis": [
-    "data analysis", "data analytics", "data analyst",
-    "analiza datelor", "analiză de date", "analiza de date",
-    "data cleaning", "analyze data", "analyzing data",
-    "actionable insights", "data insights", "transforming data",
-    "raw data", "data processing"
+    "data analysis",
+    "data analytics",
+    "data analyst",
+    "analiza datelor",
+    "analiză de date",
+    "analiza de date",
+    "analyze data",
+    "analyzing data",
+    "actionable insights",
+    "data insights",
+    "transforming data",
+    "raw data",
+    "data processing"
   ],
   "Data Visualization": [
-    "data visualization", "data visualisation", "dashboards",
-    "reports and dashboards", "visualizations", "charts",
-    "data reporting", "reporting"
+    "data visualization",
+    "data visualisation",
+    "visualizations",
+    "charts",
+    "dashboards",
+    "reports and dashboards",
+    "data reporting"
   ],
   "Statistical Analysis": [
-    "statistical analysis", "statistics", "statistică", "statistica",
-    "statistical modeling", "regression", "hypothesis testing"
+    "statistical analysis",
+    "statistics",
+    "statistică",
+    "statistica",
+    "statistical modeling",
+    "regression",
+    "hypothesis testing"
   ],
   "Data Mining": [
-    "data mining", "mining data", "pattern recognition"
+    "data mining",
+    "mining data",
+    "pattern recognition"
   ],
   "Data Preprocessing": [
-    "data preprocessing", "data preparation", "data wrangling",
-    "data cleaning", "data transformation", "etl", "extract transform load",
-    "data quality", "data integrity"
+    "data preprocessing",
+    "data preparation",
+    "data wrangling",
+    "data cleaning",
+    "data transformation",
+    "data quality",
+    "data integrity",
+    "feature scaling",
+    "data normalization"
   ],
   "Machine Learning": [
-    "machine learning", "ml", "model training", "predictive modeling",
-    "supervised learning", "classification", "regression models"
+    "machine learning",
+    "model training",
+    "predictive modeling",
+    "supervised learning",
+    "classification",
+    "regression models"
   ],
   "Artificial Intelligence": [
-    "artificial intelligence", "ai", "deep learning", "neural networks"
+    "artificial intelligence",
+    "deep learning",
+    "neural networks"
   ],
   "Large Language Models": [
-    "large language models", "llm", "llms", "gpt", "generative ai",
-    "natural language processing", "nlp"
+    "large language models",
+    "llm",
+    "llms",
+    "gpt",
+    "generative ai",
+    "natural language processing",
+    "nlp"
   ],
-  "ETL": [
-    "etl", "extract transform load", "data pipelines", "data flows",
-    "data ingestion", "data warehousing", "data warehouse", "dwh"
+  ETL: [
+    "etl",
+    "extract transform load",
+    "extract-transform-load",
+    "data pipelines",
+    "data flows",
+    "data ingestion",
+    "pipeline orchestration"
   ],
   "Data Modeling": [
-    "data modeling", "data modelling", "data model", "data structures",
-    "database design", "schema design", "master data", "metadata"
+    "data modeling",
+    "data modelling",
+    "data model",
+    "database design",
+    "schema design",
+    "master data",
+    "metadata"
   ],
   "Microsoft SQL Server": [
-    "microsoft sql server", "ms sql server", "sql server", "ssms",
-    "microsoft sql", "mssql", "ssrs", "ssis"
+    "microsoft sql server",
+    "ms sql server",
+    "sql server",
+    "mssql",
+    "ssms",
+    "ssis",
+    "ssrs",
+    "t-sql",
+    "tsql",
+    "transact-sql"
   ],
 
   // ── ML ───────────────────────────────────────────────────────────
-  "NumPy": ["numpy", "numpy arrays", "numerical python"],
-  "Pandas": ["pandas", "dataframes", "pandas dataframe"],
-  "PySpark": ["pyspark", "apache spark", "spark"],
-  "Seaborn": ["seaborn", "matplotlib", "data plotting"],
+  NumPy: [
+    "numpy",
+    "numpy arrays",
+    "numerical python"
+  ],
+  Pandas: [
+    "pandas",
+    "dataframes",
+    "pandas dataframe"
+  ],
+  PySpark: [
+    "pyspark",
+    "apache spark",
+    "spark"
+  ],
+  Seaborn: [
+    "seaborn"
+  ],
   "Cloud Computing": [
-    "cloud computing", "cloud", "cloud services", "cloud platforms"
+    "cloud computing",
+    "cloud services",
+    "cloud platforms"
   ],
 
   // ── DevOps ───────────────────────────────────────────────────────
-  "Docker": ["docker", "containerization", "containers", "docker containers"],
-  "Git": [
-    "git", "version control", "source control", "github", "gitlab",
-    "bitbucket", "git version control"
+  Docker: [
+    "docker",
+    "containerization",
+    "containers",
+    "docker containers"
   ],
-  "Azure": [
-    "azure", "microsoft azure", "azure cloud", "azure services"
+  Git: [
+    "git",
+    "version control",
+    "source control",
+    "git version control",
+    "github",
+    "gitlab"
   ],
-  "Bitbucket": ["bitbucket"],
+  Azure: [
+    "azure",
+    "microsoft azure",
+    "azure cloud",
+    "azure services"
+  ],
+  Bitbucket: [
+    "bitbucket"
+  ],
   "Version Control": [
-    "version control", "source control", "versioning"
+    "versioning"
   ],
-  "PowerShell": [
-    "powershell", "power shell", "ps scripts", "windows scripting"
+  PowerShell: [
+    "powershell",
+    "power shell",
+    "ps scripts",
+    "windows scripting"
   ],
-  "Bash": [
-    "bash", "bash scripting", "shell scripting", "linux scripting",
-    "shell scripts", "unix scripting"
+  Bash: [
+    "bash",
+    "bash scripting",
+    "shell scripting",
+    "linux scripting",
+    "shell scripts",
+    "unix scripting"
   ],
 
   // ── Dev ──────────────────────────────────────────────────────────
-  "JavaScript": [
-    "javascript", "js", "java script", "ecmascript", "vanilla js"
+  JavaScript: [
+    "javascript",
+    "js",
+    "java script",
+    "ecmascript",
+    "vanilla js"
   ],
-  "React": ["react", "reactjs", "react.js"],
+  React: [
+    "react",
+    "reactjs",
+    "react.js"
+  ],
   "Node.js": [
-    "node", "node.js", "nodejs", "express", "express.js"
+    "node",
+    "node.js",
+    "nodejs",
+    "express",
+    "express.js"
   ],
-  "CSS": ["css", "css3", "styling", "stylesheets"],
-  "HTML": ["html", "html5", "markup"],
+  CSS: [
+    "css",
+    "css3",
+    "stylesheets"
+  ],
+  HTML: [
+    "html",
+    "html5"
+  ],
   "REST APIs": [
-    "rest api", "rest apis", "api", "apis", "web services",
-    "restful", "restful api", "http api", "api integration",
+    "rest api",
+    "rest apis",
+    "web services",
+    "restful",
+    "restful api",
+    "http api",
+    "api integration",
     "api development"
   ],
-  "MongoDB": ["mongodb", "mongo", "document database", "nosql database"],
+  MongoDB: [
+    "mongodb",
+    "mongo",
+    "document database",
+    "nosql database"
+  ],
   "Object Oriented Programming": [
-    "object oriented programming", "oop", "object oriented",
-    "object-oriented", "classes and objects", "inheritance",
-    "encapsulation", "polymorphism"
+    "object oriented programming",
+    "oop",
+    "object oriented",
+    "object-oriented",
+    "classes and objects",
+    "inheritance",
+    "encapsulation",
+    "polymorphism"
   ],
-  "NoSQL": [
-    "nosql", "no-sql", "non-relational", "document store",
-    "key-value store", "nosql databases"
+  NoSQL: [
+    "nosql",
+    "no-sql",
+    "non-relational",
+    "document store",
+    "key-value store",
+    "nosql databases"
   ],
-  "MySQL": ["mysql", "my sql"],
-  "Oracle": ["oracle", "oracle db", "oracle database", "pl/sql", "plsql"],
-  "PostgreSQL": ["postgresql", "postgres", "psql"],
+  MySQL: [
+    "mysql",
+    "my sql"
+  ],
+  Oracle: [
+    "oracle",
+    "oracle db",
+    "oracle database",
+    "pl/sql",
+    "plsql"
+  ],
+  PostgreSQL: [
+    "postgresql",
+    "postgres",
+    "psql"
+  ],
 
   // ── Business ─────────────────────────────────────────────────────
-  "Excel": [
-    "excel", "microsoft excel", "spreadsheets", "ms excel",
-    "pivot tables", "vlookup", "advanced excel"
-  ],
   "Business Analysis": [
-    "business analysis", "analiză de business", "analiza de business",
-    "business analyst", "requirements gathering", "business requirements",
-    "stakeholder management", "kpi", "kpis", "business acumen",
+    "business analysis",
+    "analiză de business",
+    "analiza de business",
+    "business analyst",
+    "requirements gathering",
+    "business requirements",
+    "stakeholder management",
+    "kpi",
+    "kpis",
+    "business acumen",
     "business insights"
   ],
 
   // ── Algoritmi ────────────────────────────────────────────────────
   "Algorithms and Data Structures": [
-    "algorithms", "data structures", "algorithm design",
-    "complexity", "sorting algorithms", "search algorithms"
-  ],
+    "algorithms",
+    "data structures",
+    "algorithm design",
+    "complexity",
+    "sorting algorithms",
+    "search algorithms"
+  ]
 };
 
 function escapeRegex(text) {

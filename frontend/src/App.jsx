@@ -17,7 +17,6 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/autentificare" element={<Autentificare />} />
-        <Route path="/autentificare" element={<Autentificare />} />
 
         <Route
           path="/panou"

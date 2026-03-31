@@ -1,10 +1,8 @@
 const db = require("../config/db");
 
 async function recalculateJobsForUser(userId) {
-  const [jobs] = await db.query(
-    `SELECT id
-     FROM jobs
-     WHERE user_id = ?`,
+  const [jobs] = await db.execute(
+    "SELECT id FROM jobs WHERE user_id = ?",
     [userId]
   );
 
@@ -12,46 +10,61 @@ async function recalculateJobsForUser(userId) {
     return;
   }
 
-  const [userSkillRows] = await db.query(
-    `SELECT skill_id
-     FROM user_skills
-     WHERE user_id = ?`,
+  const jobIds = jobs.map((job) => job.id);
+
+  const placeholders = jobIds.map(() => "?").join(",");
+
+  const [jobSkills] = await db.execute(
+    `
+    SELECT js.job_id, s.name
+    FROM job_skills js
+    JOIN skills s ON js.skill_id = s.id
+    WHERE js.job_id IN (${placeholders})
+    `,
+    jobIds
+  );
+
+  const [userSkills] = await db.execute(
+    `
+    SELECT s.name
+    FROM user_skills us
+    JOIN skills s ON us.skill_id = s.id
+    WHERE us.user_id = ?
+    `,
     [userId]
   );
 
-  const userSkillIds = new Set(userSkillRows.map((row) => row.skill_id));
+  const userSkillSet = new Set(userSkills.map((skill) => skill.name));
+  const jobSkillsMap = {};
 
-  for (const job of jobs) {
-    const jobId = job.id;
-
-    const [requiredSkills] = await db.query(
-      `SELECT s.id AS skill_id, s.category
-       FROM job_skills js
-       JOIN skills s ON s.id = js.skill_id
-       WHERE js.job_id = ?`,
-      [jobId]
-    );
-
-    const filteredRequiredSkills = requiredSkills;
-
-    const totalSkills = filteredRequiredSkills.length;
-
-    let matchedSkills = 0;
-
-    for (const skill of filteredRequiredSkills) {
-      if (userSkillIds.has(skill.skill_id)) {
-        matchedSkills += 1;
-      }
+  for (const row of jobSkills) {
+    if (!jobSkillsMap[row.job_id]) {
+      jobSkillsMap[row.job_id] = [];
     }
 
-    const newScore =
-      totalSkills === 0 ? 0 : Math.round((matchedSkills / totalSkills) * 100);
+    jobSkillsMap[row.job_id].push(row.name);
+  }
 
-    await db.query(
-      `UPDATE jobs
-       SET match_score = ?
-       WHERE id = ? AND user_id = ?`,
-      [newScore, jobId, userId]
+  for (const jobId of jobIds) {
+    const requiredSkills = jobSkillsMap[jobId] || [];
+
+    if (requiredSkills.length === 0) {
+      await db.execute(
+        "UPDATE jobs SET match_score = 0 WHERE id = ?",
+        [jobId]
+      );
+      continue;
+    }
+
+    const matchedCount = requiredSkills.filter((skillName) =>
+      userSkillSet.has(skillName)
+    ).length;
+
+    const score = Math.round((matchedCount / requiredSkills.length) * 100);
+
+    await db.execute(
+      "UPDATE jobs SET match_score = ? WHERE id = ?",
+      [score, jobId]
     );
   }
 }

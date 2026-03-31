@@ -1,53 +1,68 @@
-// Importul corect pentru pdf-parse — fără /lib/pdf-parse
-// Versiunea anterioară folosea un path intern care nu există
-const pdfParse = require("pdf-parse");
+const pdfParse = require("pdf-parse/lib/pdf-parse");
 const mammoth = require("mammoth");
 const db = require("../config/db");
 const { skillMatchesText } = require("../utils/skillAliases");
 
-async function extractText(file) {
-  const mime = file.mimetype;
+async function extractTextFromFile(file) {
+  if (!file) {
+    throw new Error("No file uploaded");
+  }
 
-  if (mime === "application/pdf") {
+  const mimeType = file.mimetype || "";
+  const originalName = (file.originalname || "").toLowerCase();
+
+  if (
+    mimeType === "application/pdf" ||
+    originalName.endsWith(".pdf")
+  ) {
     const result = await pdfParse(file.buffer);
-    return result.text;
+    return result.text || "";
   }
 
   if (
-    mime ===
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    originalName.endsWith(".docx")
   ) {
-    const result = await mammoth.extractRawText({ buffer: file.buffer });
-    return result.value;
+    const result = await mammoth.extractRawText({
+      buffer: file.buffer
+    });
+    return result.value || "";
   }
 
-  throw new Error("Tip de fișier nesuportat. Folosește PDF sau DOCX.");
+  throw new Error("Unsupported file type. Please upload PDF or DOCX.");
 }
 
-async function extractSkillsFromCV(file, userId) {
-  const text = await extractText(file);
+async function detectSkillsFromText(text) {
+  const normalizedText = String(text || "").toLowerCase();
 
-  const [skills] = await db.query("SELECT id, name, category FROM skills");
-
-  const detected = skills.filter((skill) =>
-    skillMatchesText(skill.name, text)
+  const [skills] = await db.query(
+    "SELECT id, name, category FROM skills ORDER BY name ASC"
   );
 
-  const [userSkills] = await db.query(
-    "SELECT skill_id FROM user_skills WHERE user_id = ?",
-    [userId]
-  );
+  const detectedSkills = skills
+    .filter((skill) => skillMatchesText(skill.name, normalizedText))
+    .map((skill) => ({
+      skillId: Number(skill.id),
+      name: skill.name,
+      category: skill.category
+    }));
 
-  const userSkillIds = new Set(userSkills.map((s) => s.skill_id));
+  return detectedSkills;
+}
+
+async function extractAndDetectSkills(file) {
+  const text = await extractTextFromFile(file);
+  const detectedSkills = await detectSkillsFromText(text);
 
   return {
-    detectedSkills: detected.map((skill) => ({
-      skillId: skill.id,
-      name: skill.name,
-      category: skill.category,
-      isNew: !userSkillIds.has(skill.id),
-    })),
+    text,
+    detectedSkills
   };
 }
 
-module.exports = { extractSkillsFromCV };
+module.exports = {
+  extractTextFromFile,
+  detectSkillsFromText,
+  extractAndDetectSkills
+};

@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const db = require("./config/db");
 
 const authRoutes = require("./routes/auth.routes");
@@ -14,9 +15,17 @@ const analyticsRoutes = require("./routes/analytics.routes");
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+app.use(helmet());
 
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    methods: ["GET", "POST", "PATCH", "DELETE"],
+    credentials: false
+  })
+);
+
+app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobsRoutes);
