@@ -20,6 +20,142 @@ function generateStepsForSkill(skillName) {
   ];
 }
 
+function getSkillGroupStatus(steps) {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return "NOT_STARTED";
+  }
+
+  const allCompleted = steps.every((step) => step.status === "COMPLETED");
+  if (allCompleted) {
+    return "COMPLETED";
+  }
+
+  const hasInProgress = steps.some((step) => step.status === "IN_PROGRESS");
+  if (hasInProgress) {
+    return "IN_PROGRESS";
+  }
+
+  return "NOT_STARTED";
+}
+
+function getSkillGroupSortWeight(status) {
+  if (status === "IN_PROGRESS") return 1;
+  if (status === "NOT_STARTED") return 2;
+  if (status === "COMPLETED") return 3;
+  return 4;
+}
+
+function buildSkillGroupsFromSteps(steps) {
+  const groupsMap = new Map();
+
+  for (const step of steps) {
+    const key = step.skill_id
+      ? `skill-${step.skill_id}`
+      : `name-${step.skill_name || "unknown"}`;
+
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, {
+        skill_id: step.skill_id || null,
+        skill_name: step.skill_name || "Skill",
+        frequency: Number(step.frequency || 0),
+        steps: []
+      });
+    }
+
+    groupsMap.get(key).steps.push(step);
+  }
+
+  const groups = Array.from(groupsMap.values()).map((group) => {
+    const orderedSteps = [...group.steps].sort(
+      (a, b) => Number(a.step_order) - Number(b.step_order)
+    );
+
+    const status = getSkillGroupStatus(orderedSteps);
+
+    let completed_at = null;
+
+    if (status === "COMPLETED") {
+      const completedDates = orderedSteps
+        .filter((step) => step.status === "COMPLETED" && step.updated_at)
+        .map((step) => new Date(step.updated_at).getTime())
+        .filter((value) => Number.isFinite(value));
+
+      if (completedDates.length > 0) {
+        completed_at = new Date(Math.max(...completedDates)).toISOString();
+      }
+    }
+
+    return {
+      ...group,
+      steps: orderedSteps,
+      status,
+      completed_at
+    };
+  });
+
+  groups.sort((a, b) => {
+    const weightDiff =
+      getSkillGroupSortWeight(a.status) - getSkillGroupSortWeight(b.status);
+
+    if (weightDiff !== 0) return weightDiff;
+
+    const freqDiff = Number(b.frequency || 0) - Number(a.frequency || 0);
+    if (freqDiff !== 0) return freqDiff;
+
+    return String(a.skill_name).localeCompare(String(b.skill_name));
+  });
+
+  return groups;
+}
+
+function buildSkillPreviewFromGroups(skillGroups) {
+  return skillGroups.map((group) => ({
+    skill_id: group.skill_id,
+    skill_name: group.skill_name,
+    frequency: group.frequency,
+    status: group.status,
+    is_completed: group.status === "COMPLETED"
+  }));
+}
+
+function getNextSkillFromGroups(skillGroups) {
+  const nextGroup = skillGroups.find(
+    (group) => group.status === "IN_PROGRESS" || group.status === "NOT_STARTED"
+  );
+
+  if (!nextGroup) return null;
+
+  return {
+    skill_id: nextGroup.skill_id,
+    skill_name: nextGroup.skill_name,
+    frequency: nextGroup.frequency,
+    status: nextGroup.status
+  };
+}
+
+async function getSkillFrequencyMapForUser(userId) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      js.skill_id,
+      COUNT(*) AS frequency
+    FROM job_skills js
+    JOIN jobs j ON j.id = js.job_id
+    WHERE j.user_id = ?
+    GROUP BY js.skill_id
+    `,
+    [userId]
+  );
+
+  const frequencyMap = new Map();
+
+  for (const row of rows) {
+    frequencyMap.set(Number(row.skill_id), Number(row.frequency || 0));
+  }
+
+  return frequencyMap;
+}
+
 /**
  * POST /api/roadmaps/generate/:jobId
  * Generează roadmap pe baza skill-urilor lipsă pentru un job
@@ -36,7 +172,6 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       });
     }
 
-    // 1. verificăm jobul
     const [jobs] = await db.query(
       `SELECT *
        FROM jobs
@@ -53,7 +188,6 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
 
     const job = jobs[0];
 
-    // 2. verificăm dacă există deja roadmap pentru jobul respectiv
     const [existingRoadmaps] = await db.query(
       `SELECT id, title
        FROM roadmaps
@@ -69,7 +203,6 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       });
     }
 
-    // 3. luăm skill-urile cerute pentru job
     const [jobSkills] = await db.query(
       `SELECT
          js.skill_id,
@@ -87,7 +220,6 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       });
     }
 
-    // 4. luăm skill-urile userului
     const [userSkills] = await db.query(
       `SELECT skill_id
        FROM user_skills
@@ -97,10 +229,19 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
 
     const userSkillIds = new Set(userSkills.map((s) => String(s.skill_id)));
 
-    // 5. calculăm gaps
-    const missingSkills = jobSkills.filter(
-      (skill) => !userSkillIds.has(String(skill.skill_id))
-    );
+    const frequencyMap = await getSkillFrequencyMapForUser(userId);
+
+    const missingSkills = jobSkills
+      .filter((skill) => !userSkillIds.has(String(skill.skill_id)))
+      .map((skill) => ({
+        ...skill,
+        frequency: frequencyMap.get(Number(skill.skill_id)) || 0
+      }))
+      .sort((a, b) => {
+        const freqDiff = Number(b.frequency || 0) - Number(a.frequency || 0);
+        if (freqDiff !== 0) return freqDiff;
+        return String(a.skill_name).localeCompare(String(b.skill_name));
+      });
 
     if (missingSkills.length === 0) {
       return res.status(400).json({
@@ -109,7 +250,6 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
       });
     }
 
-    // 6. creăm roadmap-ul
     const title = `Roadmap pentru ${job.title}`;
     const description = `Plan personalizat de învățare generat pe baza skill-urilor lipsă pentru jobul ${job.title}.`;
 
@@ -122,7 +262,6 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
 
     const roadmapId = roadmapResult.insertId;
 
-    // 7. creăm pașii
     let stepOrder = 1;
 
     for (const skill of missingSkills) {
@@ -167,14 +306,21 @@ router.post("/generate/:jobId", authMiddleware, async (req, res) => {
 
 /**
  * GET /api/roadmaps
- * Listează roadmap-urile userului
+ * Listează roadmap-urile userului + preview skilluri + next skill
  */
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
 
     const [roadmaps] = await db.query(
-      `SELECT r.*, j.title AS job_title, j.company
+      `SELECT
+         r.*,
+         j.title AS job_title,
+         j.company,
+         j.experience_label,
+         j.degree_label,
+         j.meets_experience_requirement,
+         j.meets_degree_requirement
        FROM roadmaps r
        JOIN jobs j ON r.job_id = j.id
        WHERE r.user_id = ?
@@ -182,9 +328,66 @@ router.get("/", authMiddleware, async (req, res) => {
       [userId]
     );
 
+    if (roadmaps.length === 0) {
+      return res.json({
+        ok: true,
+        roadmaps: []
+      });
+    }
+
+    const roadmapIds = roadmaps.map((r) => Number(r.id));
+    const placeholders = roadmapIds.map(() => "?").join(",");
+
+    const frequencyMap = await getSkillFrequencyMapForUser(userId);
+
+    const [steps] = await db.query(
+      `SELECT
+         rs.id,
+         rs.roadmap_id,
+         rs.skill_id,
+         rs.step_order,
+         rs.title,
+         rs.description,
+         rs.status,
+         s.name AS skill_name
+       FROM roadmap_steps rs
+       LEFT JOIN skills s ON rs.skill_id = s.id
+       WHERE rs.roadmap_id IN (${placeholders})
+       ORDER BY rs.roadmap_id ASC, rs.step_order ASC`,
+      roadmapIds
+    );
+
+    const stepsByRoadmap = new Map();
+
+    for (const step of steps) {
+      const roadmapId = Number(step.roadmap_id);
+
+      if (!stepsByRoadmap.has(roadmapId)) {
+        stepsByRoadmap.set(roadmapId, []);
+      }
+
+      stepsByRoadmap.get(roadmapId).push({
+        ...step,
+        frequency: frequencyMap.get(Number(step.skill_id)) || 0
+      });
+    }
+
+    const enrichedRoadmaps = roadmaps.map((roadmap) => {
+      const roadmapSteps = stepsByRoadmap.get(Number(roadmap.id)) || [];
+      const skillGroups = buildSkillGroupsFromSteps(roadmapSteps);
+      const skillPreview = buildSkillPreviewFromGroups(skillGroups);
+      const nextSkill = getNextSkillFromGroups(skillGroups);
+
+      return {
+        ...roadmap,
+        skill_preview: skillPreview,
+        next_skill: nextSkill
+      };
+    });
+
     return res.json({
       ok: true,
-      roadmaps
+      roadmaps: enrichedRoadmaps
     });
   } catch (error) {
     console.error("Eroare la listarea roadmap-urilor:", error);
@@ -198,7 +401,7 @@ router.get("/", authMiddleware, async (req, res) => {
 
 /**
  * GET /api/roadmaps/:id
- * Returnează roadmap + steps
+ * Returnează roadmap + steps + skill groups ordonate
  */
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
@@ -213,7 +416,14 @@ router.get("/:id", authMiddleware, async (req, res) => {
     }
 
     const [roadmaps] = await db.query(
-      `SELECT r.*, j.title AS job_title, j.company
+      `SELECT
+         r.*,
+         j.title AS job_title,
+         j.company,
+         j.experience_label,
+         j.degree_label,
+         j.meets_experience_requirement,
+         j.meets_degree_requirement
        FROM roadmaps r
        JOIN jobs j ON r.job_id = j.id
        WHERE r.id = ? AND r.user_id = ?`,
@@ -227,8 +437,12 @@ router.get("/:id", authMiddleware, async (req, res) => {
       });
     }
 
+    const frequencyMap = await getSkillFrequencyMapForUser(userId);
+
     const [steps] = await db.query(
-      `SELECT rs.*, s.name AS skill_name
+      `SELECT
+         rs.*,
+         s.name AS skill_name
        FROM roadmap_steps rs
        LEFT JOIN skills s ON rs.skill_id = s.id
        WHERE rs.roadmap_id = ?
@@ -236,10 +450,24 @@ router.get("/:id", authMiddleware, async (req, res) => {
       [roadmapId]
     );
 
+    const enrichedSteps = steps.map((step) => ({
+      ...step,
+      frequency: frequencyMap.get(Number(step.skill_id)) || 0
+    }));
+
+    const skillGroups = buildSkillGroupsFromSteps(enrichedSteps);
+    const skillPreview = buildSkillPreviewFromGroups(skillGroups);
+    const nextSkill = getNextSkillFromGroups(skillGroups);
+
     return res.json({
       ok: true,
-      roadmap: roadmaps[0],
-      steps
+      roadmap: {
+        ...roadmaps[0],
+        skill_preview: skillPreview,
+        next_skill: nextSkill
+      },
+      steps: enrichedSteps,
+      skill_groups: skillGroups
     });
   } catch (error) {
     console.error("Eroare la detaliile roadmap-ului:", error);
@@ -277,7 +505,6 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       });
     }
 
-    // verificăm dacă pasul aparține userului + luăm skill_id
     const [rows] = await db.query(
       `SELECT
          rs.id,
@@ -303,7 +530,6 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
     const skillId = stepRow.skill_id;
     const skillName = stepRow.skill_name;
 
-    // update status pas
     await db.query(
       `UPDATE roadmap_steps
        SET status = ?, updated_at = CURRENT_TIMESTAMP
@@ -311,7 +537,6 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       [status, stepId]
     );
 
-    // recalcul progress roadmap
     const [stats] = await db.query(
       `SELECT
          COUNT(*) AS total_steps,
@@ -338,15 +563,6 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
       [progress, roadmapStatus, roadmapId]
     );
 
-    // ── Logică nivel automat bazată pe pași completați ──────────────
-    // Pattern: fiecare skill are 2 pași în roadmap
-    //   pasul 1 completat (concepte)  → Fondamental (level 1)
-    //   ambii pași completați         → Independent (level 2)
-    //   Avansat (level 3) = setat manual de utilizator
-    //
-    // Referință: Dreyfus model of skill acquisition
-    //            DigComp/EQF framework pentru 3 nivele operaționale
-
     let skillCompleted = false;
     let completedSkill = null;
 
@@ -364,32 +580,29 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
         (r) => r.status === "COMPLETED"
       ).length;
 
-      // Calculăm nivelul nou bazat pe progres
       let newLevel = null;
 
       if (completedSkillSteps === totalSkillSteps && totalSkillSteps > 0) {
-        // Toți pașii completați → Independent
         newLevel = 2;
         skillCompleted = true;
       } else if (completedSkillSteps >= 1) {
-        // Cel puțin un pas completat → Fondamental
         newLevel = 1;
       }
 
-      // Actualizăm nivelul în user_skills dacă există deja skillul în profil
-      // Dacă nu există, nu îl adăugăm automat — doar când toți pașii sunt gata
       if (newLevel !== null) {
         const [existingSkill] = await db.query(
-          `SELECT skill_id, level FROM user_skills WHERE user_id = ? AND skill_id = ?`,
+          `SELECT skill_id, level
+           FROM user_skills
+           WHERE user_id = ? AND skill_id = ?`,
           [userId, skillId]
         );
 
         if (existingSkill.length > 0) {
-          // Skillul există în profil — actualizăm nivelul doar dacă crește
           const currentLevel = Number(existingSkill[0].level);
           if (newLevel > currentLevel) {
             await db.query(
-              `UPDATE user_skills SET level = ?, updated_at = CURRENT_TIMESTAMP
+              `UPDATE user_skills
+               SET level = ?, updated_at = CURRENT_TIMESTAMP
                WHERE user_id = ? AND skill_id = ?`,
               [newLevel, userId, skillId]
             );
@@ -401,7 +614,7 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
         completedSkill = {
           skillId: Number(skillId),
           skillName: skillName || "Skill",
-          level: 2  // Independent
+          level: 2
         };
       }
     }
@@ -428,39 +641,49 @@ router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/roadmaps/:id
-// Șterge un roadmap și toți pașii asociați
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * DELETE /api/roadmaps/:id
+ * Șterge un roadmap și toți pașii asociați
+ */
 router.delete("/:id", authMiddleware, async (req, res) => {
   const userId = req.user.userId;
   const roadmapId = Number(req.params.id);
 
   if (!Number.isFinite(roadmapId)) {
-    return res.status(400).json({ ok: false, message: "ID roadmap invalid." });
+    return res.status(400).json({
+      ok: false,
+      message: "ID roadmap invalid."
+    });
   }
 
   try {
-    // Verificăm că roadmap-ul aparține userului
     const [rows] = await db.query(
-      `SELECT id FROM roadmaps WHERE id = ? AND user_id = ?`,
+      `SELECT id
+       FROM roadmaps
+       WHERE id = ? AND user_id = ?`,
       [roadmapId, userId]
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ ok: false, message: "Roadmap negăsit." });
+      return res.status(404).json({
+        ok: false,
+        message: "Roadmap negăsit."
+      });
     }
 
-    // Ștergem pașii întâi (foreign key constraint)
     await db.query(`DELETE FROM roadmap_steps WHERE roadmap_id = ?`, [roadmapId]);
-
-    // Ștergem roadmap-ul
     await db.query(`DELETE FROM roadmaps WHERE id = ?`, [roadmapId]);
 
-    return res.json({ ok: true, message: "Roadmap șters cu succes." });
+    return res.json({
+      ok: true,
+      message: "Roadmap șters cu succes."
+    });
   } catch (error) {
     console.error("Eroare la ștergerea roadmap-ului:", error);
-    return res.status(500).json({ ok: false, message: "Eroare la ștergere." });
+    return res.status(500).json({
+      ok: false,
+      message: "Eroare la ștergere."
+    });
   }
 });
 
