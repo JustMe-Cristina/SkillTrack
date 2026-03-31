@@ -3,102 +3,147 @@ const { skillMatchesText } = require("../utils/skillAliases");
 const {
   detectWorkMode,
   detectEmploymentType,
-  detectLocation
+  detectLocation,
+  detectExperienceRequirement,
+  detectEducationRequirement
 } = require("../utils/jobDetection");
+
+function normalizeText(text) {
+  return String(text || "").trim();
+}
+
+function calculateMatchScore(requiredSkills, userSkillIds) {
+  if (!requiredSkills.length) {
+    return 0;
+  }
+
+  const matchedCount = requiredSkills.filter((skill) =>
+    userSkillIds.has(Number(skill.id))
+  ).length;
+
+  return Math.round((matchedCount / requiredSkills.length) * 100);
+}
+
+async function getAllSkills() {
+  const [skills] = await db.query(
+    `
+    SELECT id, name, category
+    FROM skills
+    ORDER BY name ASC
+    `
+  );
+
+  return skills;
+}
+
+async function getUserSkills(userId) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      us.skill_id AS skillId,
+      us.level,
+      s.name,
+      s.category
+    FROM user_skills us
+    JOIN skills s ON s.id = us.skill_id
+    WHERE us.user_id = ?
+    ORDER BY s.name ASC
+    `,
+    [userId]
+  );
+
+  return rows;
+}
+
+function detectSkillsFromDescription(skills, description) {
+  const normalizedDescription = String(description || "").toLowerCase();
+
+  return skills.filter((skill) =>
+    skillMatchesText(skill.name, normalizedDescription)
+  );
+}
+
+function buildMatchesAndGaps(requiredSkills, userSkills) {
+  const userSkillIds = new Set(userSkills.map((skill) => Number(skill.skillId)));
+
+  const matches = requiredSkills
+    .filter((skill) => userSkillIds.has(Number(skill.id)))
+    .map((skill) => ({
+      skillId: Number(skill.id),
+      skill: skill.name,
+      category: skill.category
+    }));
+
+  const gaps = requiredSkills
+    .filter((skill) => !userSkillIds.has(Number(skill.id)))
+    .map((skill) => ({
+      skillId: Number(skill.id),
+      skill: skill.name,
+      category: skill.category
+    }));
+
+  return { matches, gaps };
+}
 
 async function analyzeJobData({
   userId,
   title,
   company,
   location,
-  work_mode,
-  employment_type,
   description
 }) {
-  const text = String(description || "").toLowerCase();
+  const cleanTitle = normalizeText(title);
+  const cleanCompany = normalizeText(company);
+  const cleanLocationInput = normalizeText(location);
+  const cleanDescription = normalizeText(description);
 
-  const [skills] = await db.query(
-    "SELECT id, name, category FROM skills ORDER BY name ASC"
-  );
-
-  const detected = skills.filter((skill) =>
-    skillMatchesText(skill.name, text)
-  );
-
-  const detectedIds = detected.map((s) => Number(s.id));
-  const userSkillIds = new Set();
-
-  if (detectedIds.length > 0) {
-    const placeholders = detectedIds.map(() => "?").join(",");
-
-    const [userSkillRows] = await db.query(
-      `SELECT skill_id
-       FROM user_skills
-       WHERE user_id = ? AND skill_id IN (${placeholders})`,
-      [userId, ...detectedIds]
-    );
-
-    for (const row of userSkillRows) {
-      userSkillIds.add(Number(row.skill_id));
-    }
+  if (!cleanTitle || !cleanDescription) {
+    throw new Error("Title and description are required");
   }
 
-  const matches = [];
-  const gaps = [];
-  const detectedSkills = [];
+  const [allSkills, userSkills] = await Promise.all([
+    getAllSkills(),
+    getUserSkills(userId)
+  ]);
 
-  for (const skill of detected) {
-    const hasSkill = userSkillIds.has(Number(skill.id));
+  const detectedSkills = detectSkillsFromDescription(allSkills, cleanDescription);
 
-    detectedSkills.push({
-      skillId: Number(skill.id),
-      name: skill.name,
-      category: skill.category
-    });
+  const { matches, gaps } = buildMatchesAndGaps(detectedSkills, userSkills);
 
-    if (hasSkill) {
-      matches.push({
-        skill: skill.name,
-        skillId: Number(skill.id)
-      });
-    } else {
-      gaps.push({
-        skill: skill.name,
-        skillId: Number(skill.id)
-      });
-    }
-  }
+  const userSkillIds = new Set(userSkills.map((skill) => Number(skill.skillId)));
+  const score = calculateMatchScore(detectedSkills, userSkillIds);
 
-  const totalSkills = detected.length;
-  const matchedSkills = matches.length;
+  const detectedWorkMode = detectWorkMode(cleanDescription);
+  const detectedEmploymentType = detectEmploymentType(cleanDescription);
+  const detectedLocation = cleanLocationInput || detectLocation(cleanDescription);
 
-  const score =
-    totalSkills === 0 ? 0 : Math.round((matchedSkills / totalSkills) * 100);
-
-  const detectedLocation =
-    location && String(location).trim()
-      ? String(location).trim()
-      : detectLocation(description);
-
-  const detectedWorkMode =
-    work_mode && String(work_mode).trim()
-      ? work_mode
-      : detectWorkMode(description);
-
-  const detectedEmploymentType =
-    employment_type && String(employment_type).trim()
-      ? employment_type
-      : detectEmploymentType(description);
+  const experience = detectExperienceRequirement(cleanDescription);
+  const education = detectEducationRequirement(cleanDescription);
 
   return {
-    title,
-    company,
-    location: detectedLocation,
-    work_mode: detectedWorkMode,
-    employment_type: detectedEmploymentType,
-    description,
-    detectedSkills,
+    ok: true,
+    title: cleanTitle,
+    company: cleanCompany || null,
+    location: detectedLocation || null,
+    work_mode: detectedWorkMode || null,
+    employment_type: detectedEmploymentType || null,
+
+    experience_min: experience.minimum_years,
+    experience_label: experience.label,
+
+    degree_level: education.degree_level,
+    degree_label: education.degree_label,
+
+    description: cleanDescription,
     score,
+
+    detectedSkills: detectedSkills.map((skill) => ({
+      skillId: Number(skill.id),
+      skill: skill.name,
+      name: skill.name,
+      category: skill.category
+    })),
+
     matches,
     gaps
   };

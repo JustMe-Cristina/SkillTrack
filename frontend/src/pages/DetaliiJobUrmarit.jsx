@@ -42,13 +42,23 @@ export default function DetaliiJobUrmarit() {
         method: "POST"
       });
 
-      setMessage(
-        data.message || "Roadmap generat cu succes."
-      );
+      setMessage(data.message || "Roadmap generat cu succes.");
     } catch (err) {
       console.error("GENERATE ROADMAP ERROR:", err);
       setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
     }
+  }
+
+  function renderRequirementStatus(value) {
+    if (value === true || value === 1) {
+      return <span style={styles.requirementOk}>✓</span>;
+    }
+
+    if (value === false || value === 0) {
+      return <span style={styles.requirementMissing}>!</span>;
+    }
+
+    return null;
   }
 
   return (
@@ -88,6 +98,24 @@ export default function DetaliiJobUrmarit() {
               <div style={styles.metaCard}>
                 <div style={styles.metaTitle}>Tip angajare</div>
                 <div style={styles.metaValue}>{job.employment_type || "-"}</div>
+              </div>
+
+              <div style={styles.metaCard}>
+                <div style={styles.metaTitle}>Experiență</div>
+                <div style={styles.metaValueRow}>
+                  <span>{job.experience_label || "-"}</span>
+                  {job.experience_label &&
+                    renderRequirementStatus(job.meets_experience_requirement)}
+                </div>
+              </div>
+
+              <div style={styles.metaCard}>
+                <div style={styles.metaTitle}>Studii</div>
+                <div style={styles.metaValueRow}>
+                  <span>{job.degree_label || "-"}</span>
+                  {job.degree_label &&
+                    renderRequirementStatus(job.meets_degree_requirement)}
+                </div>
               </div>
             </div>
           </div>
@@ -205,7 +233,7 @@ const styles = {
   },
   metaGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
     gap: 12
   },
   metaCard: {
@@ -224,6 +252,39 @@ const styles = {
     marginTop: 6,
     color: "#111827",
     fontWeight: 600
+  },
+  metaValueRow: {
+    marginTop: 6,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    color: "#111827",
+    fontWeight: 600
+  },
+  requirementOk: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#dcfce7",
+    color: "#166534",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
+  },
+  requirementMissing: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#fee2e2",
+    color: "#991b1b",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
   },
   separator: {
     height: 1,

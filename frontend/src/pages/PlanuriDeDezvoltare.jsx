@@ -180,6 +180,18 @@ export default function PlanuriDeDezvoltare() {
     }
   }
 
+  function renderRequirementStatus(value) {
+    if (value === true || value === 1) {
+      return <span style={styles.requirementOk}>✓</span>;
+    }
+
+    if (value === false || value === 0) {
+      return <span style={styles.requirementMissing}>!</span>;
+    }
+
+    return null;
+  }
+
   return (
     <AppLayout
       title="Planuri de dezvoltare"
@@ -267,6 +279,34 @@ export default function PlanuriDeDezvoltare() {
                     <div style={styles.metaValue}>{roadmap.progress || 0}%</div>
                   </div>
                 </div>
+
+                {(roadmap.experience_label || roadmap.degree_label) && (
+                  <div style={styles.requirementsSummary}>
+                    <div style={styles.requirementsTitle}>Eligibilitate față de cerințele jobului</div>
+
+                    <div style={styles.requirementsGrid}>
+                      {roadmap.experience_label && (
+                        <div style={styles.requirementCard}>
+                          <div style={styles.requirementLabel}>Experiență</div>
+                          <div style={styles.requirementValueRow}>
+                            <span>{roadmap.experience_label}</span>
+                            {renderRequirementStatus(roadmap.meets_experience_requirement)}
+                          </div>
+                        </div>
+                      )}
+
+                      {roadmap.degree_label && (
+                        <div style={styles.requirementCard}>
+                          <div style={styles.requirementLabel}>Studii</div>
+                          <div style={styles.requirementValueRow}>
+                            <span>{roadmap.degree_label}</span>
+                            {renderRequirementStatus(roadmap.meets_degree_requirement)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div style={styles.progressBar}>
                   <div
@@ -542,6 +582,71 @@ const styles = {
     marginTop: 8,
     color: "#111827",
     fontWeight: 700
+  },
+  requirementsSummary: {
+    marginTop: 18,
+    padding: 16,
+    borderRadius: 12,
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb"
+  },
+  requirementsTitle: {
+    fontSize: 12,
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 12,
+    fontWeight: 700
+  },
+  requirementsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12
+  },
+  requirementCard: {
+    background: "white",
+    border: "1px solid #e5e7eb",
+    borderRadius: 10,
+    padding: 12
+  },
+  requirementLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: "#6b7280"
+  },
+  requirementValueRow: {
+    marginTop: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    color: "#111827",
+    fontWeight: 600
+  },
+  requirementOk: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#dcfce7",
+    color: "#166534",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
+  },
+  requirementMissing: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#fee2e2",
+    color: "#991b1b",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
   },
   progressBar: {
     height: 12,

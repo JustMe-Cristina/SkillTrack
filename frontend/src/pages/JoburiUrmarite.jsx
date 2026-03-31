@@ -139,9 +139,7 @@ export default function JoburiUrmarite() {
         method: "POST"
       });
 
-      setMessage(
-        data.message || "Roadmap generat cu succes."
-      );
+      setMessage(data.message || "Roadmap generat cu succes.");
     } catch (err) {
       console.error("GENERATE ROADMAP ERROR:", err);
       setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
@@ -163,6 +161,18 @@ export default function JoburiUrmarite() {
       console.error("QUICK STATUS UPDATE ERROR:", err);
       setMessage(err.message || "Nu s-a putut actualiza statusul.");
     }
+  }
+
+  function renderRequirementStatus(value) {
+    if (value === true || value === 1) {
+      return <span style={styles.requirementOk}>✓</span>;
+    }
+
+    if (value === false || value === 0) {
+      return <span style={styles.requirementMissing}>!</span>;
+    }
+
+    return null;
   }
 
   return (
@@ -216,6 +226,24 @@ export default function JoburiUrmarite() {
                   <div style={styles.metaLabel}>Tip job</div>
                   <div style={styles.metaValue}>
                     {formatEmploymentType(job.employment_type)}
+                  </div>
+                </div>
+
+                <div style={styles.metaCard}>
+                  <div style={styles.metaLabel}>Experiență</div>
+                  <div style={styles.metaValueRow}>
+                    <span>{job.experience_label || "-"}</span>
+                    {job.experience_label &&
+                      renderRequirementStatus(job.meets_experience_requirement)}
+                  </div>
+                </div>
+
+                <div style={styles.metaCard}>
+                  <div style={styles.metaLabel}>Studii</div>
+                  <div style={styles.metaValueRow}>
+                    <span>{job.degree_label || "-"}</span>
+                    {job.degree_label &&
+                      renderRequirementStatus(job.meets_degree_requirement)}
                   </div>
                 </div>
               </div>
@@ -495,7 +523,7 @@ const styles = {
   },
   metaGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
     gap: 12,
     marginBottom: 18
   },
@@ -516,6 +544,40 @@ const styles = {
     color: "#111827",
     fontWeight: 600,
     fontSize: 14
+  },
+  metaValueRow: {
+    marginTop: 6,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    color: "#111827",
+    fontWeight: 600,
+    fontSize: 14
+  },
+  requirementOk: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#dcfce7",
+    color: "#166534",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
+  },
+  requirementMissing: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#fee2e2",
+    color: "#991b1b",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
   },
   description: {
     color: "#374151",

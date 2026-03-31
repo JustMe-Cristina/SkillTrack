@@ -19,12 +19,23 @@ export default function AnalizaJob() {
   const [savedJobId, setSavedJobId] = useState(null);
   const [showNextActions, setShowNextActions] = useState(false);
 
+  const [showRequirementsPrompt, setShowRequirementsPrompt] = useState(false);
+  const [requirementsAnswers, setRequirementsAnswers] = useState({
+    meets_experience_requirement: null,
+    meets_degree_requirement: null
+  });
+
   async function handleAnalyze(e) {
     e.preventDefault();
     setMessage("");
     setAnalysis(null);
     setShowNextActions(false);
     setSavedJobId(null);
+    setShowRequirementsPrompt(false);
+    setRequirementsAnswers({
+      meets_experience_requirement: null,
+      meets_degree_requirement: null
+    });
 
     if (!title.trim() || !description.trim()) {
       setMessage("Completează titlul și descrierea jobului.");
@@ -45,12 +56,54 @@ export default function AnalizaJob() {
       });
 
       setAnalysis(data);
+
+      const hasExperienceRequirement = !!data.experience_label;
+      const hasDegreeRequirement = !!data.degree_label;
+
+      if (hasExperienceRequirement || hasDegreeRequirement) {
+        setRequirementsAnswers({
+          meets_experience_requirement: hasExperienceRequirement ? null : null,
+          meets_degree_requirement: hasDegreeRequirement ? null : null
+        });
+        setShowRequirementsPrompt(true);
+      }
     } catch (err) {
       console.error("JOB ANALYZE ERROR:", err);
       setMessage(err.message || "Nu s-a putut analiza jobul.");
     } finally {
       setLoadingAnalyze(false);
     }
+  }
+
+  function setRequirementAnswer(field, value) {
+    setRequirementsAnswers((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  }
+
+  function confirmRequirementsPrompt() {
+    const needsExperienceAnswer = !!analysis?.experience_label;
+    const needsDegreeAnswer = !!analysis?.degree_label;
+
+    if (
+      needsExperienceAnswer &&
+      requirementsAnswers.meets_experience_requirement === null
+    ) {
+      setMessage("Confirmă dacă îndeplinești cerința de experiență.");
+      return;
+    }
+
+    if (
+      needsDegreeAnswer &&
+      requirementsAnswers.meets_degree_requirement === null
+    ) {
+      setMessage("Confirmă dacă îndeplinești cerința de studii.");
+      return;
+    }
+
+    setMessage("");
+    setShowRequirementsPrompt(false);
   }
 
   async function handleSaveJob() {
@@ -73,7 +126,17 @@ export default function AnalizaJob() {
           detectedSkills: analysis.detectedSkills || [],
           matches: analysis.matches || [],
           gaps: analysis.gaps || [],
-          status: "SALVAT"
+          status: "SALVAT",
+          experience_min: analysis.experience_min,
+          experience_label: analysis.experience_label,
+          degree_level: analysis.degree_level,
+          degree_label: analysis.degree_label,
+          meets_experience_requirement: analysis.experience_label
+            ? requirementsAnswers.meets_experience_requirement
+            : null,
+          meets_degree_requirement: analysis.degree_label
+            ? requirementsAnswers.meets_degree_requirement
+            : null
         })
       });
 
@@ -86,6 +149,18 @@ export default function AnalizaJob() {
     } finally {
       setLoadingSave(false);
     }
+  }
+
+  function renderRequirementStatus(value) {
+    if (value === true) {
+      return <span style={styles.requirementOk}>✓</span>;
+    }
+
+    if (value === false) {
+      return <span style={styles.requirementMissing}>!</span>;
+    }
+
+    return null;
   }
 
   return (
@@ -171,6 +246,30 @@ export default function AnalizaJob() {
                     {analysis.employment_type || "-"}
                   </div>
                 </div>
+
+                {analysis.experience_label && (
+                  <div style={styles.metaCard}>
+                    <div style={styles.metaTitle}>Experiență</div>
+                    <div style={styles.metaValueRow}>
+                      <span>{analysis.experience_label}</span>
+                      {renderRequirementStatus(
+                        requirementsAnswers.meets_experience_requirement
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {analysis.degree_label && (
+                  <div style={styles.metaCard}>
+                    <div style={styles.metaTitle}>Studii</div>
+                    <div style={styles.metaValueRow}>
+                      <span>{analysis.degree_label}</span>
+                      {renderRequirementStatus(
+                        requirementsAnswers.meets_degree_requirement
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={styles.separator} />
@@ -275,6 +374,105 @@ export default function AnalizaJob() {
           )}
         </div>
       </div>
+
+      {showRequirementsPrompt && analysis && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Confirmare criterii job</h3>
+
+            <p style={styles.modalText}>
+              Am detectat cerințe suplimentare din descrierea jobului. Confirmă
+              dacă le îndeplinești.
+            </p>
+
+            {analysis.experience_label && (
+              <div style={styles.requirementQuestion}>
+                <div style={styles.requirementQuestionTitle}>
+                  Experiență cerută: {analysis.experience_label}
+                </div>
+
+                <div style={styles.answerRow}>
+                  <button
+                    type="button"
+                    style={
+                      requirementsAnswers.meets_experience_requirement === true
+                        ? styles.answerButtonActiveYes
+                        : styles.answerButton
+                    }
+                    onClick={() =>
+                      setRequirementAnswer("meets_experience_requirement", true)
+                    }
+                  >
+                    Da
+                  </button>
+
+                  <button
+                    type="button"
+                    style={
+                      requirementsAnswers.meets_experience_requirement === false
+                        ? styles.answerButtonActiveNo
+                        : styles.answerButton
+                    }
+                    onClick={() =>
+                      setRequirementAnswer("meets_experience_requirement", false)
+                    }
+                  >
+                    Nu
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {analysis.degree_label && (
+              <div style={styles.requirementQuestion}>
+                <div style={styles.requirementQuestionTitle}>
+                  Studii cerute: {analysis.degree_label}
+                </div>
+
+                <div style={styles.answerRow}>
+                  <button
+                    type="button"
+                    style={
+                      requirementsAnswers.meets_degree_requirement === true
+                        ? styles.answerButtonActiveYes
+                        : styles.answerButton
+                    }
+                    onClick={() =>
+                      setRequirementAnswer("meets_degree_requirement", true)
+                    }
+                  >
+                    Da
+                  </button>
+
+                  <button
+                    type="button"
+                    style={
+                      requirementsAnswers.meets_degree_requirement === false
+                        ? styles.answerButtonActiveNo
+                        : styles.answerButton
+                    }
+                    onClick={() =>
+                      setRequirementAnswer("meets_degree_requirement", false)
+                    }
+                  >
+                    Nu
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                onClick={confirmRequirementsPrompt}
+              >
+                Confirmă
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
@@ -358,7 +556,7 @@ const styles = {
   },
   metaGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
     gap: 12
   },
   metaCard: {
@@ -377,6 +575,39 @@ const styles = {
     marginTop: 6,
     color: "#111827",
     fontWeight: 600
+  },
+  metaValueRow: {
+    marginTop: 6,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    color: "#111827",
+    fontWeight: 600
+  },
+  requirementOk: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#dcfce7",
+    color: "#166534",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
+  },
+  requirementMissing: {
+    width: 22,
+    height: 22,
+    borderRadius: "999px",
+    background: "#fee2e2",
+    color: "#991b1b",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flexShrink: 0
   },
   separator: {
     height: 1,
@@ -440,6 +671,91 @@ const styles = {
     border: "1px solid #d1d5db",
     background: "white",
     color: "#111827",
+    cursor: "pointer",
+    fontWeight: 600
+  },
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(17, 24, 39, 0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999
+  },
+  modal: {
+    width: "100%",
+    maxWidth: 560,
+    background: "white",
+    borderRadius: 16,
+    padding: 24,
+    boxShadow: "0 20px 40px rgba(0,0,0,0.18)"
+  },
+  modalTitle: {
+    marginTop: 0,
+    marginBottom: 12,
+    color: "#111827"
+  },
+  modalText: {
+    color: "#4b5563",
+    lineHeight: 1.7,
+    marginBottom: 16
+  },
+  requirementQuestion: {
+    padding: 14,
+    borderRadius: 12,
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb",
+    marginBottom: 14
+  },
+  requirementQuestionTitle: {
+    fontWeight: 700,
+    color: "#111827",
+    marginBottom: 12
+  },
+  answerRow: {
+    display: "flex",
+    gap: 10
+  },
+  answerButton: {
+    padding: "10px 16px",
+    borderRadius: 8,
+    border: "1px solid #d1d5db",
+    background: "white",
+    color: "#111827",
+    cursor: "pointer",
+    fontWeight: 600
+  },
+  answerButtonActiveYes: {
+    padding: "10px 16px",
+    borderRadius: 8,
+    border: "none",
+    background: "#166534",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 600
+  },
+  answerButtonActiveNo: {
+    padding: "10px 16px",
+    borderRadius: 8,
+    border: "none",
+    background: "#b91c1c",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 600
+  },
+  modalActions: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginTop: 16
+  },
+  primaryButton: {
+    padding: "12px 14px",
+    borderRadius: 8,
+    border: "none",
+    background: "#111827",
+    color: "white",
     cursor: "pointer",
     fontWeight: 600
   }

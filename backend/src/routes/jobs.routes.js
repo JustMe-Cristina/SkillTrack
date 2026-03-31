@@ -73,7 +73,13 @@ router.post("/", auth, async (req, res) => {
     detectedSkills,
     status,
     applied_at,
-    start_period
+    start_period,
+    experience_min,
+    experience_label,
+    degree_level,
+    degree_label,
+    meets_experience_requirement,
+    meets_degree_requirement
   } = req.body;
 
   if (!title || !description) {
@@ -93,8 +99,26 @@ router.post("/", auth, async (req, res) => {
   try {
     const [jobResult] = await db.query(
       `INSERT INTO jobs
-        (user_id, title, company, location, work_mode, employment_type, description, match_score, status, applied_at, start_period)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (
+          user_id,
+          title,
+          company,
+          location,
+          work_mode,
+          employment_type,
+          description,
+          match_score,
+          status,
+          applied_at,
+          start_period,
+          experience_min,
+          experience_label,
+          degree_level,
+          degree_label,
+          meets_experience_requirement,
+          meets_degree_requirement
+        )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         title,
@@ -106,7 +130,13 @@ router.post("/", auth, async (req, res) => {
         Number(score) || 0,
         status || "SALVAT",
         applied_at || null,
-        start_period || null
+        start_period || null,
+        Number.isFinite(Number(experience_min)) ? Number(experience_min) : null,
+        experience_label || null,
+        degree_level || null,
+        degree_label || null,
+        toNullableTinyInt(meets_experience_requirement),
+        toNullableTinyInt(meets_degree_requirement)
       ]
     );
 
@@ -160,6 +190,12 @@ router.get("/", auth, async (req, res) => {
          status,
          applied_at,
          start_period,
+         experience_min,
+         experience_label,
+         degree_level,
+         degree_label,
+         meets_experience_requirement,
+         meets_degree_requirement,
          created_at,
          updated_at
        FROM jobs
@@ -210,6 +246,12 @@ router.get("/:id", auth, async (req, res) => {
          status,
          applied_at,
          start_period,
+         experience_min,
+         experience_label,
+         degree_level,
+         degree_label,
+         meets_experience_requirement,
+         meets_degree_requirement,
          created_at,
          updated_at
        FROM jobs
@@ -265,12 +307,14 @@ router.get("/:id", auth, async (req, res) => {
       if (hasSkill) {
         matches.push({
           skill: skill.name,
-          skillId: Number(skill.skill_id)
+          skillId: Number(skill.skill_id),
+          category: skill.category
         });
       } else {
         gaps.push({
           skill: skill.name,
-          skillId: Number(skill.skill_id)
+          skillId: Number(skill.skill_id),
+          category: skill.category
         });
       }
     }
@@ -315,7 +359,13 @@ router.patch("/:id", auth, async (req, res) => {
     employment_type,
     status,
     applied_at,
-    start_period
+    start_period,
+    experience_min,
+    experience_label,
+    degree_level,
+    degree_label,
+    meets_experience_requirement,
+    meets_degree_requirement
   } = req.body;
 
   if (!Number.isFinite(jobId)) {
@@ -328,6 +378,7 @@ router.patch("/:id", auth, async (req, res) => {
   const allowedStatuses = ["SALVAT", "APLICAT", "IN_PROCES", "RESPINS", "ACCEPTAT"];
   const allowedWorkModes = ["REMOTE", "HYBRID", "ONSITE"];
   const allowedEmploymentTypes = ["FULL_TIME", "PART_TIME", "INTERNSHIP"];
+  const allowedDegreeLevels = ["HIGH_SCHOOL", "BACHELOR", "MASTER", "PHD"];
 
   const fields = [];
   const values = [];
@@ -398,6 +449,59 @@ router.patch("/:id", auth, async (req, res) => {
     if (start_period !== undefined) {
       fields.push("start_period = ?");
       values.push(start_period || null);
+    }
+
+    if (experience_min !== undefined) {
+      const parsedExperience =
+        experience_min === null || experience_min === ""
+          ? null
+          : Number(experience_min);
+
+      if (parsedExperience !== null && !Number.isFinite(parsedExperience)) {
+        return res.status(400).json({
+          ok: false,
+          error: "Invalid experience_min"
+        });
+      }
+
+      fields.push("experience_min = ?");
+      values.push(parsedExperience);
+    }
+
+    if (experience_label !== undefined) {
+      fields.push("experience_label = ?");
+      values.push(experience_label || null);
+    }
+
+    if (degree_level !== undefined) {
+      if (
+        degree_level !== null &&
+        degree_level !== "" &&
+        !allowedDegreeLevels.includes(degree_level)
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: "Invalid degree_level"
+        });
+      }
+
+      fields.push("degree_level = ?");
+      values.push(degree_level || null);
+    }
+
+    if (degree_label !== undefined) {
+      fields.push("degree_label = ?");
+      values.push(degree_label || null);
+    }
+
+    if (meets_experience_requirement !== undefined) {
+      fields.push("meets_experience_requirement = ?");
+      values.push(toNullableTinyInt(meets_experience_requirement));
+    }
+
+    if (meets_degree_requirement !== undefined) {
+      fields.push("meets_degree_requirement = ?");
+      values.push(toNullableTinyInt(meets_degree_requirement));
     }
 
     if (fields.length === 0) {
@@ -477,5 +581,21 @@ router.delete("/:id", auth, async (req, res) => {
     });
   }
 });
+
+function toNullableTinyInt(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (value === true || value === 1 || value === "1") {
+    return 1;
+  }
+
+  if (value === false || value === 0 || value === "0") {
+    return 0;
+  }
+
+  return null;
+}
 
 module.exports = router;
