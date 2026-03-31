@@ -3,7 +3,7 @@ import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Culori heatmap — stil GitHub, rampă verde
+// Heatmap helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function getHeatColor(count) {
   const n = Number(count || 0);
@@ -18,27 +18,50 @@ function formatDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-// Generează 84 de zile (12 săptămâni) pentru heatmap compact
-function buildHeatmap(activityMap, detailsMap = {}) {
-  const days = [];
-  const today = new Date();
+// JS: 0=duminică ... 6=sâmbătă
+// Noi vrem: 0=luni ... 6=duminică
+function getMondayBasedDayIndex(date) {
+  const jsDay = date.getDay();
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
 
-  for (let i = 83; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
+// Construiește 12 săptămâni, aliniate corect pe zilele săptămânii
+function buildHeatmap(activityMap, detailsMap = {}) {
+  const totalDays = 84; // 12 săptămâni
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - (totalDays - 1));
+  startDate.setHours(0, 0, 0, 0);
+
+  const startOffset = getMondayBasedDayIndex(startDate);
+  const cells = [];
+
+  for (let i = 0; i < startOffset; i++) {
+    cells.push(null);
+  }
+
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+
     const key = formatDate(d);
 
-    days.push({
+    cells.push({
       date: key,
       count: activityMap.get(key) || 0,
       details: detailsMap[key] || []
     });
   }
 
-  return days;
+  while (cells.length % 7 !== 0) {
+    cells.push(null);
+  }
+
+  return cells;
 }
 
-// Traduce action_type în română
 function translateAction(type) {
   const map = {
     SKILL_ADDED: "skill adăugat",
@@ -53,10 +76,13 @@ function translateAction(type) {
   return map[type] || type.toLowerCase().replace(/_/g, " ");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function PanouPrincipal() {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tooltip, setTooltip] = useState(null); // { x, y, content }
+  const [tooltip, setTooltip] = useState(null);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -78,38 +104,47 @@ export default function PanouPrincipal() {
     }
   }
 
-  // Construim heatmap-ul din datele de activitate
   const heatmapData = useMemo(() => {
     if (!dashboard?.activity) return buildHeatmap(new Map(), {});
     const map = new Map(dashboard.activity.map((d) => [d.date, d.count]));
     const detailsMap = {};
+
     dashboard.activity.forEach((d) => {
       detailsMap[d.date] = d.details || [];
     });
+
     return buildHeatmap(map, detailsMap);
   }, [dashboard]);
 
-  // Etichete luni — una per lună, poziționată la prima săptămână din lună
+  const totalWeeks = useMemo(() => {
+    return Math.ceil(heatmapData.length / 7);
+  }, [heatmapData]);
+
   const monthLabels = useMemo(() => {
     const labels = [];
     let lastMonth = null;
 
-    for (let weekIdx = 0; weekIdx < 12; weekIdx++) {
-      const day = heatmapData[weekIdx * 7];
-      if (!day) continue;
+    for (let weekIdx = 0; weekIdx < totalWeeks; weekIdx++) {
+      const weekCells = heatmapData.slice(weekIdx * 7, weekIdx * 7 + 7);
+      const firstRealDay = weekCells.find((cell) => cell !== null);
 
-      const month = new Date(day.date).getMonth();
+      if (!firstRealDay) continue;
+
+      const month = new Date(firstRealDay.date).getMonth();
+
       if (month !== lastMonth) {
         labels.push({
           col: weekIdx,
-          label: new Date(day.date).toLocaleString("ro-RO", { month: "short" })
+          label: new Date(firstRealDay.date).toLocaleString("ro-RO", {
+            month: "short"
+          })
         });
         lastMonth = month;
       }
     }
 
     return labels;
-  }, [heatmapData]);
+  }, [heatmapData, totalWeeks]);
 
   const today = new Date();
   const dateStr = today.toLocaleDateString("ro-RO", {
@@ -190,7 +225,14 @@ export default function PanouPrincipal() {
 
                 <div style={styles.heatmapWrap}>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "3px",
+                        marginTop: 1
+                      }}
+                    >
                       {["L", "", "M", "", "V", "", "D"].map((label, i) => (
                         <div
                           key={i}
@@ -208,7 +250,7 @@ export default function PanouPrincipal() {
                     </div>
 
                     <div style={styles.heatmapGrid}>
-                      {Array.from({ length: 12 }, (_, weekIdx) => (
+                      {Array.from({ length: totalWeeks }, (_, weekIdx) => (
                         <div key={weekIdx} style={styles.heatmapCol}>
                           {Array.from({ length: 7 }, (_, dayIdx) => {
                             const cell = heatmapData[weekIdx * 7 + dayIdx];
@@ -218,8 +260,9 @@ export default function PanouPrincipal() {
                                 key={dayIdx}
                                 style={{
                                   ...styles.heatCell,
-                                  background: cell ? getHeatColor(cell.count) : "#ebedf0",
-                                  cursor: cell && cell.count > 0 ? "pointer" : "default"
+                                  background: cell ? getHeatColor(cell.count) : "#f8fafc",
+                                  cursor: cell && cell.count > 0 ? "pointer" : "default",
+                                  opacity: cell ? 1 : 0
                                 }}
                                 onMouseEnter={(e) => {
                                   if (!cell) return;
@@ -263,13 +306,13 @@ export default function PanouPrincipal() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(12, 14px)",
+                      gridTemplateColumns: `repeat(${totalWeeks}, 14px)`,
                       gap: "3px",
                       marginTop: 4,
                       marginLeft: 14
                     }}
                   >
-                    {Array.from({ length: 12 }, (_, weekIdx) => {
+                    {Array.from({ length: totalWeeks }, (_, weekIdx) => {
                       const label = monthLabels.find((m) => m.col === weekIdx);
 
                       return (
@@ -361,6 +404,9 @@ export default function PanouPrincipal() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Subcomponents
+// ─────────────────────────────────────────────────────────────────────────────
 function ScoreCircle({ score }) {
   const r = 22;
   const circ = 2 * Math.PI * r;
@@ -448,6 +494,9 @@ function LeaderboardRow({ rank, initials, name, isCurrent }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = {
   message: {
     marginBottom: 16,
