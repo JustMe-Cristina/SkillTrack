@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { API_URL } from "../services/api";
+import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 export default function DetaliiJobUrmarit() {
@@ -16,60 +16,38 @@ export default function DetaliiJobUrmarit() {
   }, [jobId]);
 
   async function fetchJobDetails() {
-    const token = localStorage.getItem("token");
-
     try {
       setLoading(true);
       setMessage("");
 
-      const res = await fetch(`${API_URL}/api/jobs/${jobId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const data = await apiFetch(`/api/jobs/${jobId}`);
+      const rawJob = data.job;
+
+      setJob({
+        ...rawJob,
+        matches: Array.isArray(rawJob.matches) ? rawJob.matches : [],
+        gaps: Array.isArray(rawJob.gaps) ? rawJob.gaps : []
       });
-
-      const data = await res.json();
-
-      if (data.ok) {
-        const rawJob = data.job;
-
-        setJob({
-          ...rawJob,
-          matches: Array.isArray(rawJob.matches) ? rawJob.matches : [],
-          gaps: Array.isArray(rawJob.gaps) ? rawJob.gaps : []
-        });
-      } else {
-        setMessage(data.error || "Nu s-au putut încărca detaliile jobului.");
-      }
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la încărcarea detaliilor jobului.");
+      console.error("GET JOB DETAILS ERROR:", err);
+      setMessage(err.message || "Nu s-au putut încărca detaliile jobului.");
     } finally {
       setLoading(false);
     }
   }
 
   async function generateRoadmap() {
-    const token = localStorage.getItem("token");
-
     try {
-      const res = await fetch(`${API_URL}/api/roadmaps/generate/${jobId}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const data = await apiFetch(`/api/roadmaps/generate/${jobId}`, {
+        method: "POST"
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Roadmap generat cu succes.");
-      } else {
-        setMessage(data.message || data.error || "Nu s-a putut genera roadmap-ul.");
-      }
+      setMessage(
+        data.message || "Roadmap generat cu succes."
+      );
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la generarea roadmap-ului.");
+      console.error("GENERATE ROADMAP ERROR:", err);
+      setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
     }
   }
 
@@ -89,100 +67,98 @@ export default function DetaliiJobUrmarit() {
       ) : !job ? (
         <div style={styles.card}>Jobul nu a fost găsit.</div>
       ) : (
-        <>
-          <div style={styles.card}>
-            <div style={styles.topGrid}>
-              <div style={styles.scoreBox}>
-                <div style={styles.scoreLabel}>Scor de potrivire</div>
-                <div style={styles.scoreValue}>{job.match_score || 0}%</div>
-              </div>
-
-              <div style={styles.metaGrid}>
-                <div style={styles.metaCard}>
-                  <div style={styles.metaTitle}>Locație</div>
-                  <div style={styles.metaValue}>{job.location || "-"}</div>
-                </div>
-
-                <div style={styles.metaCard}>
-                  <div style={styles.metaTitle}>Mod de lucru</div>
-                  <div style={styles.metaValue}>{job.work_mode || "-"}</div>
-                </div>
-
-                <div style={styles.metaCard}>
-                  <div style={styles.metaTitle}>Tip angajare</div>
-                  <div style={styles.metaValue}>{job.employment_type || "-"}</div>
-                </div>
-              </div>
+        <div style={styles.card}>
+          <div style={styles.topGrid}>
+            <div style={styles.scoreBox}>
+              <div style={styles.scoreLabel}>Scor de potrivire</div>
+              <div style={styles.scoreValue}>{job.match_score || 0}%</div>
             </div>
 
-            <div style={styles.separator} />
-
-            <h3 style={styles.subTitle}>Descriere job</h3>
-            <p style={styles.description}>
-              {job.description || "Fără descriere disponibilă."}
-            </p>
-
-            <div style={styles.separator} />
-
-            <div style={styles.columns}>
-              <div>
-                <h3 style={styles.subTitle}>Competențe acoperite</h3>
-
-                {job.matches.length > 0 ? (
-                  <div style={styles.tags}>
-                    {job.matches.map((item, index) => (
-                      <span key={index} style={styles.matchTag}>
-                        {typeof item === "string" ? item : item.skill}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={styles.emptyText}>
-                    Nu există competențe acoperite salvate pentru acest job.
-                  </div>
-                )}
+            <div style={styles.metaGrid}>
+              <div style={styles.metaCard}>
+                <div style={styles.metaTitle}>Locație</div>
+                <div style={styles.metaValue}>{job.location || "-"}</div>
               </div>
 
-              <div>
-                <h3 style={styles.subTitle}>Competențe de dezvoltat</h3>
-
-                {job.gaps.length > 0 ? (
-                  <div style={styles.tags}>
-                    {job.gaps.map((item, index) => (
-                      <span key={index} style={styles.gapTag}>
-                        {typeof item === "string" ? item : item.skill}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={styles.emptyText}>
-                    Nu există competențe lipsă salvate pentru acest job.
-                  </div>
-                )}
+              <div style={styles.metaCard}>
+                <div style={styles.metaTitle}>Mod de lucru</div>
+                <div style={styles.metaValue}>{job.work_mode || "-"}</div>
               </div>
-            </div>
 
-            <div style={styles.separator} />
-
-            <div style={styles.actions}>
-              <button
-                type="button"
-                style={styles.primaryButton}
-                onClick={generateRoadmap}
-              >
-                Generează roadmap
-              </button>
-
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={() => navigate("/joburi-urmarite")}
-              >
-                Înapoi la joburi urmărite
-              </button>
+              <div style={styles.metaCard}>
+                <div style={styles.metaTitle}>Tip angajare</div>
+                <div style={styles.metaValue}>{job.employment_type || "-"}</div>
+              </div>
             </div>
           </div>
-        </>
+
+          <div style={styles.separator} />
+
+          <h3 style={styles.subTitle}>Descriere job</h3>
+          <p style={styles.description}>
+            {job.description || "Fără descriere disponibilă."}
+          </p>
+
+          <div style={styles.separator} />
+
+          <div style={styles.columns}>
+            <div>
+              <h3 style={styles.subTitle}>Competențe acoperite</h3>
+
+              {job.matches.length > 0 ? (
+                <div style={styles.tags}>
+                  {job.matches.map((item, index) => (
+                    <span key={index} style={styles.matchTag}>
+                      {typeof item === "string" ? item : item.skill}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={styles.emptyText}>
+                  Nu există competențe acoperite salvate pentru acest job.
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 style={styles.subTitle}>Competențe de dezvoltat</h3>
+
+              {job.gaps.length > 0 ? (
+                <div style={styles.tags}>
+                  {job.gaps.map((item, index) => (
+                    <span key={index} style={styles.gapTag}>
+                      {typeof item === "string" ? item : item.skill}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={styles.emptyText}>
+                  Nu există competențe lipsă salvate pentru acest job.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={styles.separator} />
+
+          <div style={styles.actions}>
+            <button
+              type="button"
+              style={styles.primaryButton}
+              onClick={generateRoadmap}
+            >
+              Generează roadmap
+            </button>
+
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={() => navigate("/joburi-urmarite")}
+            >
+              Înapoi la joburi urmărite
+            </button>
+          </div>
+        </div>
       )}
     </AppLayout>
   );

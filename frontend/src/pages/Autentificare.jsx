@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import AppNavbar from "../components/AppNavbar";
+import { apiFetch } from "../services/api";
 
 export default function Autentificare() {
   const navigate = useNavigate();
@@ -10,38 +10,34 @@ export default function Autentificare() {
   const [email, setEmail] = useState("");
   const [parola, setParola] = useState("");
   const [mesaj, setMesaj] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function handleInregistrare(e) {
     e.preventDefault();
     setMesaj("Se creează contul...");
 
     try {
-      const res = await fetch("http://localhost:5050/api/auth/register", {
+      setLoading(true);
+
+      await apiFetch("/api/auth/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
         body: JSON.stringify({
-          name: nume,
-          email,
+          name: nume.trim(),
+          email: email.trim(),
           password: parola
         })
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMesaj("Cont creat cu succes. Te poți autentifica.");
-        setMod("login");
-        setNume("");
-        setEmail("");
-        setParola("");
-      } else {
-        setMesaj(traducereMesaj(data.error));
-      }
+      setMesaj("Cont creat cu succes. Te poți autentifica.");
+      setMod("login");
+      setNume("");
+      setEmail("");
+      setParola("");
     } catch (err) {
-      console.error(err);
-      setMesaj("Eroare la înregistrare.");
+      console.error("REGISTER ERROR:", err);
+      setMesaj(traducereMesaj(err.message));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -50,28 +46,23 @@ export default function Autentificare() {
     setMesaj("Se realizează autentificarea...");
 
     try {
-      const res = await fetch("http://localhost:5050/api/auth/login", {
+      setLoading(true);
+
+      const data = await apiFetch("/api/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
         body: JSON.stringify({
-          email,
+          email: email.trim(),
           password: parola
         })
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        localStorage.setItem("token", data.token);
-        navigate("/panou");
-      } else {
-        setMesaj(traducereMesaj(data.error));
-      }
+      localStorage.setItem("token", data.token);
+      navigate("/panou");
     } catch (err) {
-      console.error(err);
-      setMesaj("Eroare la autentificare.");
+      console.error("LOGIN ERROR:", err);
+      setMesaj(traducereMesaj(err.message));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -88,13 +79,16 @@ export default function Autentificare() {
     <div style={styles.page}>
       <div style={styles.card}>
         <h1 style={styles.logo}>SkillTrack</h1>
-        <p style={styles.subtitle}>Platformă pentru analiză de competențe și job matching</p>
+        <p style={styles.subtitle}>
+          Platformă pentru analiză de competențe și job matching
+        </p>
 
         <div style={styles.switch}>
           <button
             type="button"
             style={mod === "login" ? styles.activeTab : styles.tab}
             onClick={() => setMod("login")}
+            disabled={loading}
           >
             Autentificare
           </button>
@@ -103,6 +97,7 @@ export default function Autentificare() {
             type="button"
             style={mod === "register" ? styles.activeTab : styles.tab}
             onClick={() => setMod("register")}
+            disabled={loading}
           >
             Înregistrare
           </button>
@@ -115,6 +110,7 @@ export default function Autentificare() {
               placeholder="Nume"
               value={nume}
               onChange={(e) => setNume(e.target.value)}
+              disabled={loading}
             />
 
             <input
@@ -122,6 +118,7 @@ export default function Autentificare() {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
             />
 
             <input
@@ -130,10 +127,11 @@ export default function Autentificare() {
               placeholder="Parolă"
               value={parola}
               onChange={(e) => setParola(e.target.value)}
+              disabled={loading}
             />
 
-            <button type="submit" style={styles.button}>
-              Creează cont
+            <button type="submit" style={styles.button} disabled={loading}>
+              {loading ? "Se creează..." : "Creează cont"}
             </button>
           </form>
         )}
@@ -145,6 +143,7 @@ export default function Autentificare() {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
             />
 
             <input
@@ -153,10 +152,11 @@ export default function Autentificare() {
               placeholder="Parolă"
               value={parola}
               onChange={(e) => setParola(e.target.value)}
+              disabled={loading}
             />
 
-            <button type="submit" style={styles.button}>
-              Autentificare
+            <button type="submit" style={styles.button} disabled={loading}>
+              {loading ? "Se autentifică..." : "Autentificare"}
             </button>
           </form>
         )}

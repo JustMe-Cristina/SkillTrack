@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "../services/api";
+import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 export default function AnalizaJob() {
@@ -31,35 +31,23 @@ export default function AnalizaJob() {
       return;
     }
 
-    const token = localStorage.getItem("token");
-
     try {
       setLoadingAnalyze(true);
 
-      const res = await fetch(`${API_URL}/api/jobs/analyze`, {
+      const data = await apiFetch("/api/jobs/analyze", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           title: title.trim(),
           company: company.trim(),
           location: location.trim(),
-          description: description.trim(),
-        }),
+          description: description.trim()
+        })
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setAnalysis(data);
-      } else {
-        setMessage(data.error || "Nu s-a putut analiza jobul.");
-      }
+      setAnalysis(data);
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la analiza jobului.");
+      console.error("JOB ANALYZE ERROR:", err);
+      setMessage(err.message || "Nu s-a putut analiza jobul.");
     } finally {
       setLoadingAnalyze(false);
     }
@@ -68,18 +56,12 @@ export default function AnalizaJob() {
   async function handleSaveJob() {
     if (!analysis) return;
 
-    const token = localStorage.getItem("token");
-
     try {
       setLoadingSave(true);
       setMessage("");
 
-      const res = await fetch(`${API_URL}/api/jobs`, {
+      const data = await apiFetch("/api/jobs", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           title: analysis.title,
           company: analysis.company,
@@ -91,22 +73,16 @@ export default function AnalizaJob() {
           detectedSkills: analysis.detectedSkills || [],
           matches: analysis.matches || [],
           gaps: analysis.gaps || [],
-          status: "SALVAT",
-        }),
+          status: "SALVAT"
+        })
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Jobul a fost salvat cu succes.");
-        setSavedJobId(data.jobId || data.id || null);
-        setShowNextActions(true);
-      } else {
-        setMessage(data.error || "Nu s-a putut salva jobul.");
-      }
+      setMessage("Jobul a fost salvat cu succes.");
+      setSavedJobId(data.jobId || data.id || null);
+      setShowNextActions(true);
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la salvarea jobului.");
+      console.error("JOB SAVE ERROR:", err);
+      setMessage(err.message || "Nu s-a putut salva jobul.");
     } finally {
       setLoadingSave(false);
     }
@@ -247,6 +223,7 @@ export default function AnalizaJob() {
               >
                 {loadingSave ? "Se salvează..." : "Salvează jobul"}
               </button>
+
               {showNextActions && (
                 <div style={styles.nextActionsCard}>
                   <h3 style={styles.subTitle}>Ce vrei să faci mai departe?</h3>
@@ -309,34 +286,34 @@ const styles = {
     borderRadius: 12,
     background: "#ffffff",
     color: "#374151",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.04)",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
   },
   grid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 20,
+    gap: 20
   },
   card: {
     background: "white",
     borderRadius: 16,
     padding: 24,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
   },
   sectionTitle: {
     marginTop: 0,
     marginBottom: 16,
-    color: "#111827",
+    color: "#111827"
   },
   form: {
     display: "flex",
     flexDirection: "column",
-    gap: 12,
+    gap: 12
   },
   input: {
     padding: 12,
     borderRadius: 8,
     border: "1px solid #d1d5db",
-    fontSize: 14,
+    fontSize: 14
   },
   textarea: {
     minHeight: 220,
@@ -345,7 +322,7 @@ const styles = {
     borderRadius: 8,
     border: "1px solid #d1d5db",
     fontSize: 14,
-    fontFamily: "Inter, sans-serif",
+    fontFamily: "Inter, sans-serif"
   },
   button: {
     padding: 12,
@@ -354,72 +331,72 @@ const styles = {
     background: "#111827",
     color: "white",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 600
   },
   placeholder: {
     color: "#6b7280",
-    lineHeight: 1.7,
+    lineHeight: 1.7
   },
   scoreBox: {
     padding: 16,
     borderRadius: 14,
     background: "#f9fafb",
     border: "1px solid #e5e7eb",
-    marginBottom: 18,
+    marginBottom: 18
   },
   scoreLabel: {
     fontSize: 13,
     color: "#6b7280",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1
   },
   scoreValue: {
     marginTop: 8,
     fontSize: 36,
     fontWeight: 800,
-    color: "#111827",
+    color: "#111827"
   },
   metaGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 12,
+    gap: 12
   },
   metaCard: {
     background: "#f9fafb",
     border: "1px solid #e5e7eb",
     borderRadius: 12,
-    padding: 14,
+    padding: 14
   },
   metaTitle: {
     fontSize: 12,
     color: "#6b7280",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1
   },
   metaValue: {
     marginTop: 6,
     color: "#111827",
-    fontWeight: 600,
+    fontWeight: 600
   },
   separator: {
     height: 1,
     background: "#e5e7eb",
-    margin: "20px 0",
+    margin: "20px 0"
   },
   columns: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 20,
+    gap: 20
   },
   subTitle: {
     marginTop: 0,
     marginBottom: 12,
-    color: "#111827",
+    color: "#111827"
   },
   tags: {
     display: "flex",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 8
   },
   gapTag: {
     padding: "8px 12px",
@@ -427,7 +404,7 @@ const styles = {
     background: "#fee2e2",
     color: "#991b1b",
     fontWeight: 600,
-    fontSize: 14,
+    fontSize: 14
   },
   matchTag: {
     padding: "8px 12px",
@@ -435,27 +412,27 @@ const styles = {
     background: "#dcfce7",
     color: "#166534",
     fontWeight: 600,
-    fontSize: 14,
+    fontSize: 14
   },
   emptyText: {
-    color: "#6b7280",
+    color: "#6b7280"
   },
   nextActionsCard: {
     marginTop: 20,
     padding: 20,
     borderRadius: 14,
     background: "#f9fafb",
-    border: "1px solid #e5e7eb",
+    border: "1px solid #e5e7eb"
   },
   nextActionsText: {
     color: "#4b5563",
     lineHeight: 1.6,
-    marginBottom: 14,
+    marginBottom: 14
   },
   nextActionsGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 12,
+    gap: 12
   },
   secondaryButton: {
     padding: "12px 14px",
@@ -464,6 +441,6 @@ const styles = {
     background: "white",
     color: "#111827",
     cursor: "pointer",
-    fontWeight: 600,
-  },
+    fontWeight: 600
+  }
 };

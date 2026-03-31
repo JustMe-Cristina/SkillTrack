@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "../services/api";
+import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 const initialEditState = {
@@ -30,28 +30,15 @@ export default function JoburiUrmarite() {
   }, []);
 
   async function fetchJobs() {
-    const token = localStorage.getItem("token");
-
     try {
       setLoading(true);
       setMessage("");
 
-      const res = await fetch(`${API_URL}/api/jobs`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      const data = await res.json();
-
-      if (data.ok) {
-        setJobs(data.jobs || []);
-      } else {
-        setMessage(data.error || "Nu s-au putut încărca joburile.");
-      }
+      const data = await apiFetch("/api/jobs");
+      setJobs(data.jobs || []);
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la încărcarea joburilor urmărite.");
+      console.error("GET JOBS ERROR:", err);
+      setMessage(err.message || "Nu s-au putut încărca joburile.");
     } finally {
       setLoading(false);
     }
@@ -92,8 +79,6 @@ export default function JoburiUrmarite() {
   async function saveEdit() {
     if (!editForm.id) return;
 
-    const token = localStorage.getItem("token");
-
     try {
       setSavingEdit(true);
       setMessage("");
@@ -108,27 +93,17 @@ export default function JoburiUrmarite() {
         start_period: editForm.start_period || null
       };
 
-      const res = await fetch(`${API_URL}/api/jobs/${editForm.id}`, {
+      await apiFetch(`/api/jobs/${editForm.id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify(payload)
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Jobul a fost actualizat cu succes.");
-        closeEditModal();
-        await fetchJobs();
-      } else {
-        setMessage(data.error || "Nu s-a putut actualiza jobul.");
-      }
+      setMessage("Jobul a fost actualizat cu succes.");
+      closeEditModal();
+      await fetchJobs();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la actualizarea jobului.");
+      console.error("PATCH JOB ERROR:", err);
+      setMessage(err.message || "Nu s-a putut actualiza jobul.");
     } finally {
       setSavingEdit(false);
     }
@@ -141,84 +116,52 @@ export default function JoburiUrmarite() {
 
     if (!confirmDelete) return;
 
-    const token = localStorage.getItem("token");
-
     try {
       setMessage("");
 
-      const res = await fetch(`${API_URL}/api/jobs/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      await apiFetch(`/api/jobs/${id}`, {
+        method: "DELETE"
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Jobul a fost șters.");
-        await fetchJobs();
-      } else {
-        setMessage(data.error || "Nu s-a putut șterge jobul.");
-      }
+      setMessage("Jobul a fost șters.");
+      await fetchJobs();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la ștergerea jobului.");
+      console.error("DELETE JOB ERROR:", err);
+      setMessage(err.message || "Nu s-a putut șterge jobul.");
     }
   }
 
   async function generateRoadmap(jobId) {
-    const token = localStorage.getItem("token");
-
     try {
       setMessage("");
 
-      const res = await fetch(`${API_URL}/api/roadmaps/generate/${jobId}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const data = await apiFetch(`/api/roadmaps/generate/${jobId}`, {
+        method: "POST"
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Roadmap generat cu succes.");
-      } else {
-        setMessage(data.message || data.error || "Nu s-a putut genera roadmap-ul.");
-      }
+      setMessage(
+        data.message || "Roadmap generat cu succes."
+      );
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la generarea roadmap-ului.");
+      console.error("GENERATE ROADMAP ERROR:", err);
+      setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
     }
   }
 
   async function quickUpdateStatus(jobId, status) {
-    const token = localStorage.getItem("token");
-
     try {
       setMessage("");
 
-      const res = await fetch(`${API_URL}/api/jobs/${jobId}`, {
+      await apiFetch(`/api/jobs/${jobId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({ status })
       });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Statusul jobului a fost actualizat.");
-        await fetchJobs();
-      } else {
-        setMessage(data.error || "Nu s-a putut actualiza statusul.");
-      }
+      setMessage("Statusul jobului a fost actualizat.");
+      await fetchJobs();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la actualizarea statusului.");
+      console.error("QUICK STATUS UPDATE ERROR:", err);
+      setMessage(err.message || "Nu s-a putut actualiza statusul.");
     }
   }
 
@@ -245,7 +188,9 @@ export default function JoburiUrmarite() {
               <div style={styles.topRow}>
                 <div>
                   <h3 style={styles.title}>{job.title}</h3>
-                  <p style={styles.company}>{job.company || "Companie nespecificată"}</p>
+                  <p style={styles.company}>
+                    {job.company || "Companie nespecificată"}
+                  </p>
                 </div>
 
                 <div style={styles.scoreBox}>
@@ -262,12 +207,16 @@ export default function JoburiUrmarite() {
 
                 <div style={styles.metaCard}>
                   <div style={styles.metaLabel}>Status</div>
-                  <div style={styles.metaValue}>{formatStatus(job.status)}</div>
+                  <div style={styles.metaValue}>
+                    {formatStatus(job.status)}
+                  </div>
                 </div>
 
                 <div style={styles.metaCard}>
                   <div style={styles.metaLabel}>Tip job</div>
-                  <div style={styles.metaValue}>{formatEmploymentType(job.employment_type)}</div>
+                  <div style={styles.metaValue}>
+                    {formatEmploymentType(job.employment_type)}
+                  </div>
                 </div>
               </div>
 
@@ -278,7 +227,9 @@ export default function JoburiUrmarite() {
               </p>
 
               <div style={styles.statusRow}>
-                <label style={styles.selectLabel}>Actualizează rapid statusul:</label>
+                <label style={styles.selectLabel}>
+                  Actualizează rapid statusul:
+                </label>
 
                 <select
                   style={styles.select}

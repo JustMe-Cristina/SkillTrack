@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_URL } from "../services/api";
+import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 export default function PlanuriDeDezvoltare() {
@@ -23,41 +23,21 @@ export default function PlanuriDeDezvoltare() {
     try {
       await Promise.all([fetchRoadmaps(), fetchJobs()]);
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la încărcarea datelor.");
+      console.error("LOAD ROADMAP DATA ERROR:", err);
+      setMessage(err.message || "Eroare la încărcarea datelor.");
     } finally {
       setLoading(false);
     }
   }
 
   async function fetchRoadmaps() {
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(`${API_URL}/api/roadmaps`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await res.json();
-
-    if (data.ok) {
-      setRoadmaps(data.roadmaps || []);
-    } else {
-      setMessage(data.message || data.error || "Nu s-au putut încărca roadmap-urile.");
-    }
+    const data = await apiFetch("/api/roadmaps");
+    setRoadmaps(data.roadmaps || []);
   }
 
   async function fetchJobs() {
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(`${API_URL}/api/jobs`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await res.json();
-
-    if (data.ok) {
-      setJobs(data.jobs || []);
-    }
+    const data = await apiFetch("/api/jobs");
+    setJobs(data.jobs || []);
   }
 
   async function generateRoadmap() {
@@ -66,30 +46,18 @@ export default function PlanuriDeDezvoltare() {
       return;
     }
 
-    const token = localStorage.getItem("token");
-
     try {
       setMessage("");
 
-      const res = await fetch(
-        `${API_URL}/api/roadmaps/generate/${selectedJobId}`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      const data = await apiFetch(`/api/roadmaps/generate/${selectedJobId}`, {
+        method: "POST"
+      });
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setMessage("Roadmap generat cu succes.");
-        await fetchRoadmaps();
-      } else {
-        setMessage(data.message || data.error || "Nu s-a putut genera roadmap-ul.");
-      }
+      setMessage(data.message || "Roadmap generat cu succes.");
+      await fetchRoadmaps();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la generarea roadmap-ului.");
+      console.error("GENERATE ROADMAP ERROR:", err);
+      setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
     }
   }
 
@@ -103,121 +71,89 @@ export default function PlanuriDeDezvoltare() {
 
     if (roadmapDetails[roadmapId]) return;
 
-    const token = localStorage.getItem("token");
-
     try {
-      const res = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const data = await apiFetch(`/api/roadmaps/${roadmapId}`);
 
-      const data = await res.json();
-
-      if (data.ok) {
-        setRoadmapDetails((prev) => ({
-          ...prev,
-          [roadmapId]: {
-            roadmap: data.roadmap,
-            steps: data.steps || []
-          }
-        }));
-      } else {
-        setMessage(data.message || data.error || "Nu s-au putut încărca detaliile roadmap-ului.");
-      }
+      setRoadmapDetails((prev) => ({
+        ...prev,
+        [roadmapId]: {
+          roadmap: data.roadmap,
+          steps: data.steps || []
+        }
+      }));
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la încărcarea detaliilor roadmap-ului.");
+      console.error("GET ROADMAP DETAILS ERROR:", err);
+      setMessage(err.message || "Nu s-au putut încărca detaliile roadmap-ului.");
     }
   }
 
   async function updateStepStatus(roadmapId, stepId, status) {
-    const token = localStorage.getItem("token");
-
     try {
-      const res = await fetch(`${API_URL}/api/roadmaps/steps/${stepId}`, {
+      const data = await apiFetch(`/api/roadmaps/steps/${stepId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({ status })
       });
 
-      const data = await res.json();
+      setMessage(data.message || "Pas actualizat cu succes.");
 
-      if (data.ok) {
-        setMessage("Pas actualizat cu succes.");
-
-        if (data.skillCompleted && data.completedSkill) {
-          setCompletedSkillPrompt(data.completedSkill);
-        }
-
-        const detailsRes = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        const detailsData = await detailsRes.json();
-
-        if (detailsData.ok) {
-          setRoadmapDetails((prev) => ({
-            ...prev,
-            [roadmapId]: {
-              roadmap: detailsData.roadmap,
-              steps: detailsData.steps || []
-            }
-          }));
-        }
-
-        await fetchRoadmaps();
-      } else {
-        setMessage(data.message || data.error || "Nu s-a putut actualiza pasul.");
+      if (data.skillCompleted && data.completedSkill) {
+        setCompletedSkillPrompt(data.completedSkill);
       }
+
+      const detailsData = await apiFetch(`/api/roadmaps/${roadmapId}`);
+
+      setRoadmapDetails((prev) => ({
+        ...prev,
+        [roadmapId]: {
+          roadmap: detailsData.roadmap,
+          steps: detailsData.steps || []
+        }
+      }));
+
+      await fetchRoadmaps();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la actualizarea pasului.");
+      console.error("UPDATE STEP STATUS ERROR:", err);
+      setMessage(err.message || "Nu s-a putut actualiza pasul.");
     }
   }
 
   async function deleteRoadmap(roadmapId) {
-    if (!window.confirm("Sigur vrei să ștergi acest roadmap? Acțiunea nu poate fi anulată.")) return;
+    if (
+      !window.confirm("Sigur vrei să ștergi acest roadmap? Acțiunea nu poate fi anulată.")
+    ) {
+      return;
+    }
 
-    const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API_URL}/api/roadmaps/${roadmapId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
+      await apiFetch(`/api/roadmaps/${roadmapId}`, {
+        method: "DELETE"
       });
-      const data = await res.json();
-      if (data.ok) {
-        setMessage("Roadmap șters.");
-        setRoadmapDetails((prev) => {
-          const next = { ...prev };
-          delete next[roadmapId];
-          return next;
-        });
-        if (expandedRoadmapId === roadmapId) setExpandedRoadmapId(null);
-        await fetchRoadmaps();
-      } else {
-        setMessage(data.message || "Nu s-a putut șterge roadmap-ul.");
+
+      setMessage("Roadmap șters.");
+
+      setRoadmapDetails((prev) => {
+        const next = { ...prev };
+        delete next[roadmapId];
+        return next;
+      });
+
+      if (expandedRoadmapId === roadmapId) {
+        setExpandedRoadmapId(null);
       }
+
+      await fetchRoadmaps();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la ștergerea roadmap-ului.");
+      console.error("DELETE ROADMAP ERROR:", err);
+      setMessage(err.message || "Nu s-a putut șterge roadmap-ul.");
     }
   }
-
 
   async function addCompletedSkillToProfile() {
     if (!completedSkillPrompt) return;
 
-    const token = localStorage.getItem("token");
-
     try {
-      const res = await fetch(`${API_URL}/api/user-skills`, {
+      const data = await apiFetch("/api/user-skills", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           skillId: Number(completedSkillPrompt.skillId),
           level: 2,
@@ -225,24 +161,21 @@ export default function PlanuriDeDezvoltare() {
         })
       });
 
-      const data = await res.json();
-
-      // Tratăm și "Skill already exists" ca succes — skillul e deja în profil
-      if (data.ok || data.error === "Skill already exists") {
-        setMessage(
-          data.error === "Skill already exists"
-            ? `${completedSkillPrompt.skillName} era deja în profilul tău.`
-            : `Competența ${completedSkillPrompt.skillName} a fost adăugată la profilul tău.`
-        );
-        setCompletedSkillPrompt(null);
-        await fetchRoadmaps();
-      } else {
-        setMessage(data.error || "Nu s-a putut adăuga skillul la profil.");
-        setCompletedSkillPrompt(null);
-      }
+      setMessage(
+        data?.message ||
+          `Competența ${completedSkillPrompt.skillName} a fost adăugată la profilul tău.`
+      );
+      setCompletedSkillPrompt(null);
+      await fetchRoadmaps();
     } catch (err) {
-      console.error(err);
-      setMessage("Eroare la adăugarea skillului în profil.");
+      console.error("ADD COMPLETED SKILL ERROR:", err);
+
+      if (err.message === "Skill already added" || err.message === "Skill already exists") {
+        setMessage(`${completedSkillPrompt.skillName} era deja în profilul tău.`);
+      } else {
+        setMessage(err.message || "Nu s-a putut adăuga skillul la profil.");
+      }
+
       setCompletedSkillPrompt(null);
     }
   }
@@ -389,9 +322,14 @@ export default function PlanuriDeDezvoltare() {
                                   ...styles.stepBtn,
                                   background: step.status === "NOT_STARTED" ? "#111827" : "white",
                                   color: step.status === "NOT_STARTED" ? "white" : "#111827",
-                                  border: step.status === "NOT_STARTED" ? "none" : "1px solid #d1d5db"
+                                  border:
+                                    step.status === "NOT_STARTED"
+                                      ? "none"
+                                      : "1px solid #d1d5db"
                                 }}
-                                onClick={() => updateStepStatus(roadmap.id, step.id, "NOT_STARTED")}
+                                onClick={() =>
+                                  updateStepStatus(roadmap.id, step.id, "NOT_STARTED")
+                                }
                               >
                                 Neînceput
                               </button>
@@ -402,9 +340,14 @@ export default function PlanuriDeDezvoltare() {
                                   ...styles.stepBtn,
                                   background: step.status === "IN_PROGRESS" ? "#1d4ed8" : "white",
                                   color: step.status === "IN_PROGRESS" ? "white" : "#111827",
-                                  border: step.status === "IN_PROGRESS" ? "none" : "1px solid #d1d5db"
+                                  border:
+                                    step.status === "IN_PROGRESS"
+                                      ? "none"
+                                      : "1px solid #d1d5db"
                                 }}
-                                onClick={() => updateStepStatus(roadmap.id, step.id, "IN_PROGRESS")}
+                                onClick={() =>
+                                  updateStepStatus(roadmap.id, step.id, "IN_PROGRESS")
+                                }
                               >
                                 În progres
                               </button>
@@ -415,9 +358,14 @@ export default function PlanuriDeDezvoltare() {
                                   ...styles.stepBtn,
                                   background: step.status === "COMPLETED" ? "#15803d" : "white",
                                   color: step.status === "COMPLETED" ? "white" : "#111827",
-                                  border: step.status === "COMPLETED" ? "none" : "1px solid #d1d5db"
+                                  border:
+                                    step.status === "COMPLETED"
+                                      ? "none"
+                                      : "1px solid #d1d5db"
                                 }}
-                                onClick={() => updateStepStatus(roadmap.id, step.id, "COMPLETED")}
+                                onClick={() =>
+                                  updateStepStatus(roadmap.id, step.id, "COMPLETED")
+                                }
                               >
                                 Finalizat
                               </button>
@@ -439,8 +387,7 @@ export default function PlanuriDeDezvoltare() {
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>Skill finalizat 🎉</h3>
             <p style={styles.modalText}>
-              Ai completat toți pașii pentru{" "}
-              <strong>{completedSkillPrompt.skillName}</strong>.
+              Ai completat toți pașii pentru <strong>{completedSkillPrompt.skillName}</strong>.
             </p>
             <p style={styles.modalText}>
               Dacă skillul e deja în profilul tău, nivelul a fost actualizat

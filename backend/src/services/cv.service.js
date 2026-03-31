@@ -1,4 +1,4 @@
-const pdfParse = require("pdf-parse/lib/pdf-parse");
+const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const db = require("../config/db");
 const { skillMatchesText } = require("../utils/skillAliases");

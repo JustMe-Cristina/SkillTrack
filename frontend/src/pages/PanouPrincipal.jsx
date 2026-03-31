@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_URL } from "../services/api";
+import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,36 +22,21 @@ function formatDate(date) {
 function buildHeatmap(activityMap, detailsMap = {}) {
   const days = [];
   const today = new Date();
+
   for (let i = 83; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const key = formatDate(d);
+
     days.push({
       date: key,
       count: activityMap.get(key) || 0,
       details: detailsMap[key] || []
     });
   }
+
   return days;
 }
-
-// Calculează luna pentru etichete sub heatmap
-function getMonthLabels(days) {
-  const labels = [];
-  let lastMonth = null;
-  days.forEach((day, i) => {
-    const month = new Date(day.date).getMonth();
-    if (month !== lastMonth) {
-      labels.push({ col: Math.floor(i / 7), label: new Date(day.date).toLocaleString("ro-RO", { month: "short" }) });
-      lastMonth = month;
-    }
-  });
-  return labels;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPONENTA PRINCIPALĂ
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Traduce action_type în română
 function translateAction(type) {
@@ -64,6 +49,7 @@ function translateAction(type) {
     ROADMAP_CREATED: "roadmap creat",
     ROADMAP_STEP_DONE: "pas roadmap finalizat"
   };
+
   return map[type] || type.toLowerCase().replace(/_/g, " ");
 }
 
@@ -71,20 +57,22 @@ export default function PanouPrincipal() {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState(null); // { x, y, content }
+  const [message, setMessage] = useState("");
 
-  useEffect(() => { fetchDashboard(); }, []);
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
 
   async function fetchDashboard() {
-    const token = localStorage.getItem("token");
     setLoading(true);
+    setMessage("");
+
     try {
-      const res = await fetch(`${API_URL}/api/analytics/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.ok) setDashboard(data);
+      const data = await apiFetch("/api/analytics/dashboard");
+      setDashboard(data);
     } catch (err) {
-      console.error(err);
+      console.error("DASHBOARD ERROR:", err);
+      setMessage(err.message || "Nu s-au putut încărca datele din dashboard.");
     } finally {
       setLoading(false);
     }
@@ -95,7 +83,9 @@ export default function PanouPrincipal() {
     if (!dashboard?.activity) return buildHeatmap(new Map(), {});
     const map = new Map(dashboard.activity.map((d) => [d.date, d.count]));
     const detailsMap = {};
-    dashboard.activity.forEach((d) => { detailsMap[d.date] = d.details || []; });
+    dashboard.activity.forEach((d) => {
+      detailsMap[d.date] = d.details || [];
+    });
     return buildHeatmap(map, detailsMap);
   }, [dashboard]);
 
@@ -103,9 +93,11 @@ export default function PanouPrincipal() {
   const monthLabels = useMemo(() => {
     const labels = [];
     let lastMonth = null;
+
     for (let weekIdx = 0; weekIdx < 12; weekIdx++) {
       const day = heatmapData[weekIdx * 7];
       if (!day) continue;
+
       const month = new Date(day.date).getMonth();
       if (month !== lastMonth) {
         labels.push({
@@ -115,26 +107,30 @@ export default function PanouPrincipal() {
         lastMonth = month;
       }
     }
+
     return labels;
   }, [heatmapData]);
 
-  // Ziua și ora pentru salut
   const today = new Date();
   const dateStr = today.toLocaleDateString("ro-RO", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric"
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric"
   });
 
   const userName = dashboard?.user?.name?.split(" ")[0] || "Cristina";
 
   return (
     <AppLayout title="Acasă" subtitle="">
+      {message && <div style={styles.message}>{message}</div>}
+
       {loading ? (
         <div style={styles.card}>
           <div style={{ color: "#9ca3af", fontSize: 14 }}>Se încarcă...</div>
         </div>
       ) : (
         <>
-          {/* ══ HEADER ══════════════════════════════════════════════ */}
           <div style={styles.header}>
             <div>
               <div style={styles.greeting}>Bună, {userName}</div>
@@ -142,14 +138,7 @@ export default function PanouPrincipal() {
             </div>
           </div>
 
-          {/* ══ CELE 3 CARDURI SDT ═══════════════════════════════════
-              Competență · Consistență · Competențe
-              Referință: Deci & Ryan SDT (1985, 2000)
-                         Yang et al. (2025) doi:10.3389/fpsyg.2025.1545980
-          ═══════════════════════════════════════════════════════════ */}
           <div style={styles.gridThree}>
-
-            {/* Competență — scor mediu portofoliu */}
             <div style={{ ...styles.metricCard, borderLeft: "3px solid #378ADD" }}>
               <div style={styles.metricLabel}>Competență</div>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
@@ -165,7 +154,6 @@ export default function PanouPrincipal() {
               </div>
             </div>
 
-            {/* Consistență — streak cu foc */}
             <div style={{ ...styles.metricCard, borderLeft: "3px solid #EF9F27" }}>
               <div style={styles.metricLabel}>Consistență</div>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
@@ -181,7 +169,6 @@ export default function PanouPrincipal() {
               </div>
             </div>
 
-            {/* Competențe — skills în profil */}
             <div style={{ ...styles.metricCard, borderLeft: "3px solid #1D9E75" }}>
               <div style={styles.metricLabel}>Competențe</div>
               <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
@@ -194,64 +181,75 @@ export default function PanouPrincipal() {
                 </div>
               </div>
             </div>
-
           </div>
 
-          {/* ══ RÂNDUL DE JOS: Heatmap + Rol + Leaderboard ══════════ */}
           <div style={styles.gridTwo}>
-
-            {/* Stânga: Heatmap + Rol potrivit */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-              {/* Heatmap activitate
-                  Referință: gamification & streak — Deci & Ryan SDT
-                             Gagné et al. PMC9088153 */}
               <div style={styles.card}>
                 <div style={styles.sectionLabel}>Activitate · ultimele 12 săptămâni</div>
 
-                {/* Grid heatmap cu etichete zile săptămână */}
                 <div style={styles.heatmapWrap}>
                   <div style={{ display: "flex", gap: 4 }}>
-
-                    {/* Etichete zile — L M M J V S D */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: 1 }}>
                       {["L", "", "M", "", "V", "", "D"].map((label, i) => (
-                        <div key={i} style={{ height: 11, fontSize: 9, color: "#9ca3af", lineHeight: "11px", width: 10 }}>
+                        <div
+                          key={i}
+                          style={{
+                            height: 11,
+                            fontSize: 9,
+                            color: "#9ca3af",
+                            lineHeight: "11px",
+                            width: 10
+                          }}
+                        >
                           {label}
                         </div>
                       ))}
                     </div>
 
-                    {/* Grid săptămâni */}
                     <div style={styles.heatmapGrid}>
                       {Array.from({ length: 12 }, (_, weekIdx) => (
                         <div key={weekIdx} style={styles.heatmapCol}>
                           {Array.from({ length: 7 }, (_, dayIdx) => {
                             const cell = heatmapData[weekIdx * 7 + dayIdx];
+
                             return (
                               <div
                                 key={dayIdx}
                                 style={{
                                   ...styles.heatCell,
-                                  background: cell ? getHeatColor(cell.count) : "var(--heat-0)",
+                                  background: cell ? getHeatColor(cell.count) : "#ebedf0",
                                   cursor: cell && cell.count > 0 ? "pointer" : "default"
                                 }}
                                 onMouseEnter={(e) => {
                                   if (!cell) return;
+
                                   const rect = e.target.getBoundingClientRect();
                                   const dateObj = new Date(cell.date);
-                                  const dateStr = dateObj.toLocaleDateString("ro-RO", {
-                                    weekday: "short", day: "numeric", month: "short"
+                                  const dayText = dateObj.toLocaleDateString("ro-RO", {
+                                    weekday: "short",
+                                    day: "numeric",
+                                    month: "short"
                                   });
-                                  let content = cell.count === 0
-                                    ? `${dateStr} · nicio activitate`
-                                    : `${dateStr} · ${cell.count} acțiuni`;
+
+                                  let content =
+                                    cell.count === 0
+                                      ? `${dayText} · nicio activitate`
+                                      : `${dayText} · ${cell.count} acțiuni`;
+
                                   if (cell.details && cell.details.length > 0) {
-                                    content += "\n" + cell.details
-                                      .map((d) => `• ${d.count}× ${translateAction(d.type)}`)
-                                      .join("\n");
+                                    content +=
+                                      "\n" +
+                                      cell.details
+                                        .map((d) => `• ${d.count}× ${translateAction(d.type)}`)
+                                        .join("\n");
                                   }
-                                  setTooltip({ x: rect.left + rect.width / 2, y: rect.top - 8, content });
+
+                                  setTooltip({
+                                    x: rect.left + rect.width / 2,
+                                    y: rect.top - 8,
+                                    content
+                                  });
                                 }}
                                 onMouseLeave={() => setTooltip(null)}
                               />
@@ -262,10 +260,18 @@ export default function PanouPrincipal() {
                     </div>
                   </div>
 
-                  {/* Etichete luni */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 14px)", gap: "3px", marginTop: 4, marginLeft: 14 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(12, 14px)",
+                      gap: "3px",
+                      marginTop: 4,
+                      marginLeft: 14
+                    }}
+                  >
                     {Array.from({ length: 12 }, (_, weekIdx) => {
                       const label = monthLabels.find((m) => m.col === weekIdx);
+
                       return (
                         <div key={weekIdx} style={{ overflow: "visible", whiteSpace: "nowrap" }}>
                           {label && (
@@ -279,7 +285,6 @@ export default function PanouPrincipal() {
                   </div>
                 </div>
 
-                {/* Legendă */}
                 <div style={styles.legend}>
                   <span style={styles.legendText}>Mai puțin</span>
                   {[0, 1, 2, 3, 4].map((lvl) => (
@@ -295,9 +300,6 @@ export default function PanouPrincipal() {
                 </div>
               </div>
 
-              {/* Rol potrivit — placeholder ML
-                  Va fi implementat cu cosine similarity pe catalogul de roluri
-                  Referință: Singla et al. (2025) doi:10.1186/s40537-025-01173-y */}
               <div style={styles.card}>
                 <div style={styles.sectionLabel}>Rol potrivit</div>
                 <div style={styles.placeholderBox}>
@@ -311,13 +313,8 @@ export default function PanouPrincipal() {
                   </span>
                 </div>
               </div>
-
             </div>
 
-            {/* Dreapta: Top săptămânal
-                Relaționare SDT — Social Comparison Theory (Festinger, 1954)
-                Va fi populat cu K-Means clustering
-                Referință: Education Sciences MDPI (2025) doi:10.3390/educsci15070819 */}
             <div style={styles.card}>
               <div style={styles.sectionLabel}>Top săptămânal</div>
 
@@ -333,40 +330,36 @@ export default function PanouPrincipal() {
                 </span>
               </div>
             </div>
-
           </div>
         </>
       )}
 
-      {/* Tooltip heatmap */}
       {tooltip && (
-        <div style={{
-          position: "fixed",
-          left: tooltip.x,
-          top: tooltip.y,
-          transform: "translate(-50%, -100%)",
-          background: "#111827",
-          color: "white",
-          padding: "8px 12px",
-          borderRadius: 8,
-          fontSize: 12,
-          lineHeight: 1.6,
-          whiteSpace: "pre-line",
-          pointerEvents: "none",
-          zIndex: 9999,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-          maxWidth: 220
-        }}>
+        <div
+          style={{
+            position: "fixed",
+            left: tooltip.x,
+            top: tooltip.y,
+            transform: "translate(-50%, -100%)",
+            background: "#111827",
+            color: "white",
+            padding: "8px 12px",
+            borderRadius: 8,
+            fontSize: 12,
+            lineHeight: 1.6,
+            whiteSpace: "pre-line",
+            pointerEvents: "none",
+            zIndex: 9999,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+            maxWidth: 220
+          }}
+        >
           {tooltip.content}
         </div>
       )}
     </AppLayout>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENTE
-// ─────────────────────────────────────────────────────────────────────────────
 
 function ScoreCircle({ score }) {
   const r = 22;
@@ -379,8 +372,12 @@ function ScoreCircle({ score }) {
       <svg width="52" height="52" viewBox="0 0 52 52">
         <circle cx="26" cy="26" r={r} fill="none" stroke="#e5e7eb" strokeWidth="4" />
         <circle
-          cx="26" cy="26" r={r}
-          fill="none" stroke="#378ADD" strokeWidth="4"
+          cx="26"
+          cy="26"
+          r={r}
+          fill="none"
+          stroke="#378ADD"
+          strokeWidth="4"
           strokeLinecap="round"
           strokeDasharray={`${circ} ${circ}`}
           strokeDashoffset={offset}
@@ -394,52 +391,72 @@ function ScoreCircle({ score }) {
 
 function LeaderboardRow({ rank, initials, name, isCurrent }) {
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      padding: "9px 8px",
-      borderRadius: 8,
-      marginBottom: 4,
-      background: isCurrent ? "#f5f3ff" : "transparent",
-      border: isCurrent ? "1px solid #e0dffe" : "1px solid transparent"
-    }}>
-      <span style={{
-        fontSize: 12,
-        fontWeight: 500,
-        color: isCurrent ? "#7F77DD" : "#9ca3af",
-        minWidth: 20
-      }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "9px 8px",
+        borderRadius: 8,
+        marginBottom: 4,
+        background: isCurrent ? "#f5f3ff" : "transparent",
+        border: isCurrent ? "1px solid #e0dffe" : "1px solid transparent"
+      }}
+    >
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 500,
+          color: isCurrent ? "#7F77DD" : "#9ca3af",
+          minWidth: 20
+        }}
+      >
         #{rank}
       </span>
-      <div style={{
-        width: 28, height: 28, borderRadius: "50%",
-        background: isCurrent ? "#EEEDFE" : "#f3f4f6",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 10, fontWeight: 500,
-        color: isCurrent ? "#534AB7" : "#6b7280",
-        flexShrink: 0
-      }}>
+
+      <div
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: "50%",
+          background: isCurrent ? "#EEEDFE" : "#f3f4f6",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 10,
+          fontWeight: 500,
+          color: isCurrent ? "#534AB7" : "#6b7280",
+          flexShrink: 0
+        }}
+      >
         {initials}
       </div>
-      <span style={{
-        fontSize: 13,
-        fontWeight: isCurrent ? 500 : 400,
-        color: isCurrent ? "#111827" : "#6b7280",
-        flex: 1
-      }}>
+
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: isCurrent ? 500 : 400,
+          color: isCurrent ? "#111827" : "#6b7280",
+          flex: 1
+        }}
+      >
         {name}
       </span>
+
       <span style={{ fontSize: 12, color: "#9ca3af" }}>—</span>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STILURI
-// ─────────────────────────────────────────────────────────────────────────────
-
 const styles = {
+  message: {
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    background: "#ffffff",
+    color: "#374151",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
+  },
   header: {
     marginBottom: 20,
     display: "flex",
@@ -513,8 +530,6 @@ const styles = {
     letterSpacing: 1.2,
     marginBottom: 14
   },
-
-  // ── Heatmap ──────────────────────────────────────────
   heatmapWrap: {
     marginBottom: 8
   },
@@ -531,15 +546,6 @@ const styles = {
     width: 11,
     height: 11,
     borderRadius: 2
-  },
-  monthLabels: {
-    display: "grid",
-    gridTemplateColumns: "repeat(12, 1fr)",
-    marginTop: 6
-  },
-  monthLabel: {
-    fontSize: 10,
-    color: "#9ca3af"
   },
   legend: {
     display: "flex",
@@ -558,8 +564,6 @@ const styles = {
     marginRight: 2,
     marginLeft: 2
   },
-
-  // ── Placeholder ──────────────────────────────────────
   placeholderBox: {
     padding: 14,
     background: "#f9fafb",
