@@ -1,18 +1,83 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
+import { apiFetch } from "../services/api";
+import MesajFeedback from "../components/MesajFeedback";
 
-const initialEditState = {
-  id: null,
-  company: "",
-  location: "",
-  work_mode: "",
-  employment_type: "",
-  status: "SALVAT",
-  applied_at: "",
-  start_period: ""
+const STATUS_LABELS = {
+  SALVAT: "Salvat",
+  APLICAT: "Aplicat",
+  INTERVIU: "Interviu",
+  OFERTA: "Ofertă",
+  RESPINS: "Respins",
+  FARA_RASPUNS: "Fără răspuns",
 };
+
+const STATUS_OPTIONS = [
+  { value: "SALVAT", label: "Salvat" },
+  { value: "APLICAT", label: "Aplicat" },
+  { value: "INTERVIU", label: "Interviu" },
+  { value: "OFERTA", label: "Ofertă" },
+  { value: "RESPINS", label: "Respins" },
+  { value: "FARA_RASPUNS", label: "Fără răspuns" },
+];
+
+const WORK_MODE_LABELS = {
+  REMOTE: "Remote",
+  HYBRID: "Hybrid",
+  ONSITE: "On-site",
+};
+
+const EMPLOYMENT_LABELS = {
+  FULL_TIME: "Full-time",
+  PART_TIME: "Part-time",
+  INTERNSHIP: "Internship",
+};
+
+const ML_CATEGORY_LABELS = {
+  DATA: "Data",
+  BI: "BI",
+  BUSINESS: "Business",
+  PM: "PM",
+  FRONTEND: "Frontend",
+  BACKEND: "Backend",
+  FULLSTACK: "Full Stack",
+  QA: "QA",
+  AI_ML: "AI / ML",
+};
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  return new Date(value).toLocaleDateString("ro-RO", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatConfidence(value) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) return null;
+
+  return `${Math.round(number * 100)}%`;
+}
+
+function getStatusLabel(status) {
+  return STATUS_LABELS[status] || status || "Salvat";
+}
+
+function getScoreTone(score) {
+  const value = Number(score || 0);
+
+  if (value >= 75) return "high";
+  if (value >= 45) return "medium";
+
+  return "low";
+}
 
 export default function JoburiUrmarite() {
   const navigate = useNavigate();
@@ -20,413 +85,489 @@ export default function JoburiUrmarite() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState(initialEditState);
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [mlFilter, setMlFilter] = useState("ALL");
+  const [updatingJobId, setUpdatingJobId] = useState(null);
+  const [deletingJobId, setDeletingJobId] = useState(null);
+  const [offerPopupJob, setOfferPopupJob] = useState(null);
 
   useEffect(() => {
-    fetchJobs();
+    loadJobs();
   }, []);
 
-  async function fetchJobs() {
-    try {
-      setLoading(true);
-      setMessage("");
+  async function loadJobs() {
+    setLoading(true);
+    setMessage("");
 
+    try {
       const data = await apiFetch("/api/jobs");
-      setJobs(data.jobs || []);
+
+      const normalizedJobs = Array.isArray(data.jobs)
+        ? data.jobs
+        : Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+
+      setJobs(normalizedJobs);
     } catch (err) {
-      console.error("GET JOBS ERROR:", err);
-      setMessage(err.message || "Nu s-au putut încărca joburile.");
+      console.error("LOAD JOBS ERROR:", err);
+      setMessage(err.message || "Nu s-au putut încărca joburile urmărite.");
     } finally {
       setLoading(false);
     }
   }
 
-  function goToDetails(jobId) {
-    navigate(`/joburi-urmarite/${jobId}`);
-  }
-
-  function openEditModal(job) {
-    setEditForm({
-      id: job.id,
-      company: job.company || "",
-      location: job.location || "",
-      work_mode: job.work_mode || "",
-      employment_type: job.employment_type || "",
-      status: job.status || "SALVAT",
-      applied_at: toInputDate(job.applied_at),
-      start_period: job.start_period || ""
-    });
-    setIsEditOpen(true);
+  async function handleStatusChange(jobId, status) {
+    setUpdatingJobId(jobId);
     setMessage("");
-  }
 
-  function closeEditModal() {
-    setIsEditOpen(false);
-    setEditForm(initialEditState);
-  }
-
-  function handleEditChange(e) {
-    const { name, value } = e.target;
-    setEditForm((prev) => ({
-      ...prev,
-      [name]: value
-    }));
-  }
-
-  async function saveEdit() {
-    if (!editForm.id) return;
+    const currentJob = jobs.find((job) => Number(job.id) === Number(jobId));
 
     try {
-      setSavingEdit(true);
-      setMessage("");
-
-      const payload = {
-        company: editForm.company || null,
-        location: editForm.location,
-        work_mode: editForm.work_mode || null,
-        employment_type: editForm.employment_type || null,
-        status: editForm.status || "SALVAT",
-        applied_at: editForm.applied_at || null,
-        start_period: editForm.start_period || null
-      };
-
-      await apiFetch(`/api/jobs/${editForm.id}`, {
+      await apiFetch(`/api/jobs/${jobId}/status`, {
         method: "PATCH",
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ status }),
       });
 
-      setMessage("Jobul a fost actualizat cu succes.");
-      closeEditModal();
-      await fetchJobs();
+      const updatedJob = currentJob
+        ? {
+            ...currentJob,
+            status,
+          }
+        : {
+            id: jobId,
+            status,
+            title: "jobul selectat",
+          };
+
+      setJobs((prev) =>
+        prev.map((job) =>
+          Number(job.id) === Number(jobId)
+            ? {
+                ...job,
+                status,
+              }
+            : job,
+        ),
+      );
+
+      if (status === "OFERTA") {
+        setOfferPopupJob(updatedJob);
+      }
     } catch (err) {
-      console.error("PATCH JOB ERROR:", err);
-      setMessage(err.message || "Nu s-a putut actualiza jobul.");
+      console.error("UPDATE JOB STATUS ERROR:", err);
+      setMessage(err.message || "Nu s-a putut actualiza statusul jobului.");
     } finally {
-      setSavingEdit(false);
+      setUpdatingJobId(null);
     }
   }
 
-  async function deleteJob(id) {
-    const confirmDelete = window.confirm(
-      "Sigur vrei să ștergi acest job urmărit?"
+  async function handleDeleteJob(jobId, jobTitle) {
+    const confirmed = window.confirm(
+      `Sigur vrei să ștergi jobul „${
+        jobTitle || "selectat"
+      }” din lista de joburi urmărite?`,
     );
 
-    if (!confirmDelete) return;
+    if (!confirmed) return;
+
+    setDeletingJobId(jobId);
+    setMessage("");
 
     try {
-      setMessage("");
-
-      await apiFetch(`/api/jobs/${id}`, {
-        method: "DELETE"
+      await apiFetch(`/api/jobs/${jobId}`, {
+        method: "DELETE",
       });
 
-      setMessage("Jobul a fost șters.");
-      await fetchJobs();
+      setJobs((prev) => prev.filter((job) => Number(job.id) !== Number(jobId)));
+
+      setMessage("Jobul a fost șters cu succes.");
     } catch (err) {
       console.error("DELETE JOB ERROR:", err);
       setMessage(err.message || "Nu s-a putut șterge jobul.");
+    } finally {
+      setDeletingJobId(null);
     }
   }
 
-  async function generateRoadmap(jobId) {
-    try {
-      setMessage("");
+  const mlCategories = useMemo(() => {
+    const categories = new Set();
 
-      const data = await apiFetch(`/api/roadmaps/generate/${jobId}`, {
-        method: "POST"
-      });
+    jobs.forEach((job) => {
+      if (job.ml_predicted_category) {
+        categories.add(job.ml_predicted_category);
+      }
+    });
 
-      setMessage(data.message || "Roadmap generat cu succes.");
-    } catch (err) {
-      console.error("GENERATE ROADMAP ERROR:", err);
-      setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
-    }
-  }
+    return Array.from(categories).sort();
+  }, [jobs]);
 
-  async function quickUpdateStatus(jobId, status) {
-    try {
-      setMessage("");
+  const filteredJobs = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-      await apiFetch(`/api/jobs/${jobId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status })
-      });
+    return jobs.filter((job) => {
+      const matchesSearch =
+        !query ||
+        String(job.title || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(job.company || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(job.location || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(job.ml_predicted_category || "")
+          .toLowerCase()
+          .includes(query);
 
-      setMessage("Statusul jobului a fost actualizat.");
-      await fetchJobs();
-    } catch (err) {
-      console.error("QUICK STATUS UPDATE ERROR:", err);
-      setMessage(err.message || "Nu s-a putut actualiza statusul.");
-    }
-  }
+      const matchesStatus =
+        statusFilter === "ALL" || job.status === statusFilter;
 
-  function renderRequirementStatus(value) {
-    if (value === true || value === 1) {
-      return <span style={styles.requirementOk}>✓</span>;
-    }
+      const matchesMl =
+        mlFilter === "ALL" || job.ml_predicted_category === mlFilter;
 
-    if (value === false || value === 0) {
-      return <span style={styles.requirementMissing}>!</span>;
-    }
+      return matchesSearch && matchesStatus && matchesMl;
+    });
+  }, [jobs, search, statusFilter, mlFilter]);
 
-    return null;
-  }
+  const stats = useMemo(() => {
+    const total = jobs.length;
+
+    const applied = jobs.filter((job) =>
+      ["APLICAT", "INTERVIU", "OFERTA"].includes(job.status),
+    ).length;
+
+    const withMl = jobs.filter((job) => job.ml_predicted_category).length;
+
+    const avgScore =
+      total === 0
+        ? 0
+        : Math.round(
+            jobs.reduce((sum, job) => sum + Number(job.match_score || 0), 0) /
+              total,
+          );
+
+    return {
+      total,
+      applied,
+      withMl,
+      avgScore,
+    };
+  }, [jobs]);
 
   return (
     <AppLayout
       title="Joburi urmărite"
-      subtitle="Gestionează joburile salvate, vezi analiza completă și actualizează manual informațiile relevante"
+      subtitle="Urmărește joburile salvate, scorul de potrivire, categoria ML și statusul aplicării."
     >
-      {message && <div style={styles.message}>{message}</div>}
+      {message && <MesajFeedback message={message} type="info" />}
 
       {loading ? (
-        <div style={styles.card}>Se încarcă joburile...</div>
-      ) : jobs.length === 0 ? (
         <div style={styles.card}>
-          <div style={styles.emptyTitle}>Nu ai joburi salvate.</div>
-          <div style={styles.emptyText}>
-            Analizează un job și salvează-l pentru a-l urmări aici.
-          </div>
+          <div style={styles.muted}>Se încarcă joburile urmărite...</div>
         </div>
       ) : (
-        <div style={styles.grid}>
-          {jobs.map((job) => (
-            <div key={job.id} style={styles.card}>
-              <div style={styles.topRow}>
-                <div>
-                  <h3 style={styles.title}>{job.title}</h3>
-                  <p style={styles.company}>
-                    {job.company || "Companie nespecificată"}
-                  </p>
-                </div>
-
-                <div style={styles.scoreBox}>
-                  <div style={styles.scoreLabel}>Match</div>
-                  <div style={styles.scoreValue}>{job.match_score || 0}%</div>
-                </div>
-              </div>
-
-              <div style={styles.metaGrid}>
-                <div style={styles.metaCard}>
-                  <div style={styles.metaLabel}>Locație</div>
-                  <div style={styles.metaValue}>{job.location || "-"}</div>
-                </div>
-
-                <div style={styles.metaCard}>
-                  <div style={styles.metaLabel}>Status</div>
-                  <div style={styles.metaValue}>
-                    {formatStatus(job.status)}
-                  </div>
-                </div>
-
-                <div style={styles.metaCard}>
-                  <div style={styles.metaLabel}>Tip job</div>
-                  <div style={styles.metaValue}>
-                    {formatEmploymentType(job.employment_type)}
-                  </div>
-                </div>
-
-                <div style={styles.metaCard}>
-                  <div style={styles.metaLabel}>Experiență</div>
-                  <div style={styles.metaValueRow}>
-                    <span>{job.experience_label || "-"}</span>
-                    {job.experience_label &&
-                      renderRequirementStatus(job.meets_experience_requirement)}
-                  </div>
-                </div>
-
-                <div style={styles.metaCard}>
-                  <div style={styles.metaLabel}>Studii</div>
-                  <div style={styles.metaValueRow}>
-                    <span>{job.degree_label || "-"}</span>
-                    {job.degree_label &&
-                      renderRequirementStatus(job.meets_degree_requirement)}
-                  </div>
-                </div>
-              </div>
-
-              <p style={styles.description}>
-                {job.description
-                  ? truncateText(job.description, 220)
-                  : "Fără descriere disponibilă."}
+        <>
+          <div style={styles.heroCard}>
+            <div>
+              <div style={styles.eyebrow}>SkillTrack Jobs</div>
+              <h1 style={styles.heroTitle}>Joburi urmărite</h1>
+              <p style={styles.heroText}>
+                Aici vezi joburile salvate după analiză, scorul de potrivire,
+                categoria estimată de modelul ML și progresul tău în procesul de
+                aplicare.
               </p>
-
-              <div style={styles.statusRow}>
-                <label style={styles.selectLabel}>
-                  Actualizează rapid statusul:
-                </label>
-
-                <select
-                  style={styles.select}
-                  value={job.status || "SALVAT"}
-                  onChange={(e) => quickUpdateStatus(job.id, e.target.value)}
-                >
-                  <option value="SALVAT">Salvat</option>
-                  <option value="APLICAT">Aplicat</option>
-                  <option value="IN_PROCES">În proces</option>
-                  <option value="RESPINS">Respins</option>
-                  <option value="ACCEPTAT">Acceptat</option>
-                </select>
-              </div>
-
-              <div style={styles.actions}>
-                <button
-                  type="button"
-                  onClick={() => goToDetails(job.id)}
-                  style={styles.primaryButton}
-                >
-                  Detalii job
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openEditModal(job)}
-                  style={styles.secondaryButton}
-                >
-                  Editează
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => generateRoadmap(job.id)}
-                  style={styles.secondaryButton}
-                >
-                  Generează roadmap
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => deleteJob(job.id)}
-                  style={styles.deleteButton}
-                >
-                  Șterge
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {isEditOpen && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Editează jobul urmărit</h3>
-            <p style={styles.modalText}>
-              Poți actualiza manual informațiile relevante pentru procesul tău de aplicare.
-            </p>
-
-            <div style={styles.formGrid}>
-              <div style={styles.field}>
-                <label style={styles.label}>Companie</label>
-                <input
-                  style={styles.input}
-                  name="company"
-                  value={editForm.company}
-                  onChange={handleEditChange}
-                  placeholder="Companie"
-                />
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Locație</label>
-                <input
-                  style={styles.input}
-                  name="location"
-                  value={editForm.location}
-                  onChange={handleEditChange}
-                  placeholder="Locație"
-                />
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Mod de lucru</label>
-                <select
-                  style={styles.input}
-                  name="work_mode"
-                  value={editForm.work_mode}
-                  onChange={handleEditChange}
-                >
-                  <option value="">Nespecificat</option>
-                  <option value="REMOTE">Remote</option>
-                  <option value="HYBRID">Hybrid</option>
-                  <option value="ONSITE">Onsite</option>
-                </select>
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Tip angajare</label>
-                <select
-                  style={styles.input}
-                  name="employment_type"
-                  value={editForm.employment_type}
-                  onChange={handleEditChange}
-                >
-                  <option value="">Nespecificat</option>
-                  <option value="FULL_TIME">Full-time</option>
-                  <option value="PART_TIME">Part-time</option>
-                  <option value="INTERNSHIP">Internship</option>
-                </select>
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Status</label>
-                <select
-                  style={styles.input}
-                  name="status"
-                  value={editForm.status}
-                  onChange={handleEditChange}
-                >
-                  <option value="SALVAT">Salvat</option>
-                  <option value="APLICAT">Aplicat</option>
-                  <option value="IN_PROCES">În proces</option>
-                  <option value="RESPINS">Respins</option>
-                  <option value="ACCEPTAT">Acceptat</option>
-                </select>
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Data aplicării</label>
-                <input
-                  style={styles.input}
-                  type="date"
-                  name="applied_at"
-                  value={editForm.applied_at}
-                  onChange={handleEditChange}
-                />
-              </div>
-
-              <div style={{ ...styles.field, gridColumn: "1 / -1" }}>
-                <label style={styles.label}>Perioadă de start</label>
-                <input
-                  style={styles.input}
-                  name="start_period"
-                  value={editForm.start_period}
-                  onChange={handleEditChange}
-                  placeholder="Ex: Iulie 2026 / ASAP / Septembrie 2026"
-                />
-              </div>
             </div>
 
-            <div style={styles.modalActions}>
+            <div style={styles.heroStats}>
+              <span>Scor mediu</span>
+              <strong>{stats.avgScore}%</strong>
+              <p>calculat pe baza joburilor salvate</p>
+            </div>
+          </div>
+
+          <div style={styles.statsGrid}>
+            <InfoBox
+              label="Joburi salvate"
+              value={stats.total}
+              helper="total joburi urmărite"
+            />
+
+            <InfoBox
+              label="În aplicare"
+              value={stats.applied}
+              helper="aplicat / interviu / ofertă"
+            />
+
+            <InfoBox
+              label="Cu predicție ML"
+              value={stats.withMl}
+              helper="joburi clasificate automat"
+            />
+
+            <InfoBox
+              label="Rezultate afișate"
+              value={filteredJobs.length}
+              helper="după filtrele curente"
+            />
+          </div>
+
+          <div style={styles.filtersCard}>
+            <div style={styles.filterSearchGroup}>
+              <label style={styles.filterLabel}>Căutare</label>
+              <input
+                style={styles.searchInput}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Caută job, companie, locație..."
+              />
+            </div>
+
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Status</label>
+              <select
+                style={styles.select}
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="ALL">Toate</option>
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Categorie ML</label>
+              <select
+                style={styles.select}
+                value={mlFilter}
+                onChange={(event) => setMlFilter(event.target.value)}
+              >
+                <option value="ALL">Toate</option>
+                {mlCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {ML_CATEGORY_LABELS[category] || category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              style={styles.resetButton}
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("ALL");
+                setMlFilter("ALL");
+              }}
+            >
+              Resetează filtre
+            </button>
+          </div>
+
+          {filteredJobs.length === 0 ? (
+            <div style={styles.card}>
+              <EmptyState message="Nu există joburi pentru filtrele curente." />
+
               <button
                 type="button"
                 style={styles.primaryButton}
-                onClick={saveEdit}
-                disabled={savingEdit}
+                onClick={() => navigate("/analiza")}
               >
-                {savingEdit ? "Se salvează..." : "Salvează modificările"}
+                Analizează un job nou
+              </button>
+            </div>
+          ) : (
+            <div style={styles.jobsGrid}>
+              {filteredJobs.map((job) => {
+                const scoreTone = getScoreTone(job.match_score);
+                const confidence = formatConfidence(job.ml_confidence);
+
+                return (
+                  <article key={job.id} style={styles.jobCard}>
+                    <div style={styles.jobHeader}>
+                      <div>
+                        <div style={styles.jobEyebrow}>
+                          {job.company || "Companie necunoscută"}
+                        </div>
+
+                        <h2 style={styles.jobTitle}>{job.title}</h2>
+
+                        <div style={styles.jobMeta}>
+                          <span>{job.location || "Locație nespecificată"}</span>
+                          <span>•</span>
+                          <span>
+                            {WORK_MODE_LABELS[job.work_mode] ||
+                              job.work_mode ||
+                              "Mod nespecificat"}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {EMPLOYMENT_LABELS[job.employment_type] ||
+                              job.employment_type ||
+                              "Tip nespecificat"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          ...styles.scoreBadge,
+                          ...(scoreTone === "high"
+                            ? styles.scoreHigh
+                            : scoreTone === "medium"
+                              ? styles.scoreMedium
+                              : styles.scoreLow),
+                        }}
+                      >
+                        {job.match_score ?? 0}%
+                      </div>
+                    </div>
+
+                    <div style={styles.jobInfoGrid}>
+                      <div style={styles.miniInfo}>
+                        <span>Status</span>
+                        <strong>{getStatusLabel(job.status)}</strong>
+                      </div>
+
+                      <div style={styles.miniInfo}>
+                        <span>Categorie ML</span>
+                        <strong>
+                          {ML_CATEGORY_LABELS[job.ml_predicted_category] ||
+                            job.ml_predicted_category ||
+                            "N/A"}
+                        </strong>
+                      </div>
+
+                      <div style={styles.miniInfo}>
+                        <span>Confidence</span>
+                        <strong>{confidence || "N/A"}</strong>
+                      </div>
+
+                      <div style={styles.miniInfo}>
+                        <span>Salvat</span>
+                        <strong>{formatDate(job.created_at)}</strong>
+                      </div>
+                    </div>
+
+                    <div style={styles.badgeRow}>
+                      {job.experience_label && (
+                        <span style={styles.softBadge}>
+                          Experiență: {job.experience_label}
+                        </span>
+                      )}
+
+                      {job.degree_label && (
+                        <span style={styles.softBadge}>
+                          Studii: {job.degree_label}
+                        </span>
+                      )}
+
+                      {job.ml_model && (
+                        <span style={styles.mlBadge}>
+                          Model: {job.ml_model}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={styles.statusBlock}>
+                      <label style={styles.statusLabel}>
+                        Actualizează statusul:
+                        <select
+                          style={styles.statusSelect}
+                          value={job.status || "SALVAT"}
+                          disabled={updatingJobId === job.id}
+                          onChange={(event) =>
+                            handleStatusChange(job.id, event.target.value)
+                          }
+                        >
+                          {STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div style={styles.actions}>
+                      <button
+                        type="button"
+                        style={styles.primaryButton}
+                        onClick={() => navigate(`/joburi-urmarite/${job.id}`)}
+                      >
+                        Vezi detalii
+                      </button>
+
+                      <button
+                        type="button"
+                        style={styles.secondaryButton}
+                        onClick={() => navigate("/roadmaps")}
+                      >
+                        Roadmap
+                      </button>
+
+                      <button
+                        type="button"
+                        style={styles.deleteButton}
+                        onClick={() => handleDeleteJob(job.id, job.title)}
+                        disabled={deletingJobId === job.id}
+                      >
+                        {deletingJobId === job.id ? "Se șterge..." : "Șterge"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {offerPopupJob && (
+        <div style={styles.overlay}>
+          <div style={styles.offerModal}>
+            <div style={styles.offerModalIcon}>🏆</div>
+
+            <h2 style={styles.offerModalTitle}>Felicitări!</h2>
+
+            <p style={styles.offerModalText}>
+              Ai primit o ofertă pentru jobul{" "}
+              <strong>{offerPopupJob.title || "selectat"}</strong>
+              {offerPopupJob.company ? (
+                <>
+                  {" "}
+                  de la <strong>{offerPopupJob.company}</strong>
+                </>
+              ) : null}
+              . Acest rezultat va apărea și în profilul tău ca achievement.
+            </p>
+
+            <div style={styles.offerModalActions}>
+              <button
+                type="button"
+                style={styles.offerModalSecondaryButton}
+                onClick={() => setOfferPopupJob(null)}
+              >
+                Închide
               </button>
 
               <button
                 type="button"
-                style={styles.secondaryButton}
-                onClick={closeEditModal}
-                disabled={savingEdit}
+                style={styles.offerModalPrimaryButton}
+                onClick={() => {
+                  setOfferPopupJob(null);
+                  navigate("/profilul-meu");
+                }}
               >
-                Renunță
+                Mergi la Profilul meu
               </button>
             </div>
           </div>
@@ -436,33 +577,22 @@ export default function JoburiUrmarite() {
   );
 }
 
-function formatStatus(status) {
-  if (status === "SALVAT") return "Salvat";
-  if (status === "APLICAT") return "Aplicat";
-  if (status === "IN_PROCES") return "În proces";
-  if (status === "RESPINS") return "Respins";
-  if (status === "ACCEPTAT") return "Acceptat";
-  return status || "-";
+function InfoBox({ label, value, helper }) {
+  return (
+    <div style={styles.infoBox}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {helper && <p>{helper}</p>}
+    </div>
+  );
 }
 
-function formatEmploymentType(type) {
-  if (type === "FULL_TIME") return "Full-time";
-  if (type === "PART_TIME") return "Part-time";
-  if (type === "INTERNSHIP") return "Internship";
-  return type || "-";
-}
-
-function truncateText(text, maxLength = 180) {
-  if (!text) return "";
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}...`;
-}
-
-function toInputDate(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+function EmptyState({ message }) {
+  return (
+    <div style={styles.emptyState}>
+      <span>{message}</span>
+    </div>
+  );
 }
 
 const styles = {
@@ -472,230 +602,427 @@ const styles = {
     borderRadius: 12,
     background: "#ffffff",
     color: "#374151",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
+    boxShadow: "0 10px 30px rgba(0,0,0,0.04)",
   },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
-    gap: 20
+
+  muted: {
+    color: "#9ca3af",
+    fontSize: 14,
   },
+
   card: {
     background: "white",
-    padding: 24,
     borderRadius: 16,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
+    padding: 20,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+    border: "1px solid #f1f5f9",
   },
-  topRow: {
+
+  heroCard: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 16,
-    marginBottom: 18
+    alignItems: "stretch",
+    gap: 24,
+    marginBottom: 16,
+    padding: 24,
+    borderRadius: 20,
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.98))",
+    border: "1px solid #e0e7ff",
+    boxShadow: "0 16px 45px rgba(15,23,42,0.08)",
   },
-  title: {
-    margin: 0,
-    color: "#111827"
-  },
-  company: {
-    marginTop: 8,
-    marginBottom: 0,
-    color: "#6b7280"
-  },
-  scoreBox: {
-    minWidth: 92,
-    padding: 12,
-    borderRadius: 12,
-    background: "#f9fafb",
-    border: "1px solid #e5e7eb",
-    textAlign: "center"
-  },
-  scoreLabel: {
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: "#6b7280"
-  },
-  scoreValue: {
-    marginTop: 8,
-    fontSize: 24,
-    fontWeight: 800,
-    color: "#111827"
-  },
-  metaGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-    gap: 12,
-    marginBottom: 18
-  },
-  metaCard: {
-    background: "#f9fafb",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 12
-  },
-  metaLabel: {
+
+  eyebrow: {
     fontSize: 11,
+    fontWeight: 800,
+    color: "#4f46e5",
     textTransform: "uppercase",
-    letterSpacing: 1,
-    color: "#6b7280"
+    letterSpacing: 1.4,
+    marginBottom: 8,
   },
-  metaValue: {
-    marginTop: 6,
+
+  heroTitle: {
+    margin: 0,
+    fontSize: 34,
     color: "#111827",
-    fontWeight: 600,
-    fontSize: 14
+    letterSpacing: "-0.04em",
   },
-  metaValueRow: {
-    marginTop: 6,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    color: "#111827",
-    fontWeight: 600,
-    fontSize: 14
-  },
-  requirementOk: {
-    width: 22,
-    height: 22,
-    borderRadius: "999px",
-    background: "#dcfce7",
-    color: "#166534",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-    flexShrink: 0
-  },
-  requirementMissing: {
-    width: 22,
-    height: 22,
-    borderRadius: "999px",
-    background: "#fee2e2",
-    color: "#991b1b",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-    flexShrink: 0
-  },
-  description: {
-    color: "#374151",
+
+  heroText: {
+    margin: "10px 0 0",
+    color: "#64748b",
+    fontSize: 14,
     lineHeight: 1.7,
-    minHeight: 72,
-    marginBottom: 18
+    maxWidth: 760,
   },
-  statusRow: {
+
+  heroStats: {
+    minWidth: 220,
+    borderRadius: 18,
+    background: "#111827",
+    color: "white",
+    padding: 20,
+  },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 14,
+    marginBottom: 16,
+  },
+
+  infoBox: {
+    padding: 16,
+    borderRadius: 16,
+    background: "#ffffff",
+    border: "1px solid #f1f5f9",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
     display: "flex",
     flexDirection: "column",
-    gap: 8,
-    marginBottom: 18
+    gap: 6,
   },
-  selectLabel: {
-    fontSize: 14,
-    color: "#374151",
-    fontWeight: 600
+
+  filtersCard: {
+    display: "grid",
+    gridTemplateColumns: "1.4fr 180px 180px auto",
+    gap: 12,
+    alignItems: "end",
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 18,
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
   },
-  select: {
-    padding: 10,
-    borderRadius: 8,
+
+  filterSearchGroup: {
+    display: "grid",
+    gap: 6,
+    minWidth: 0,
+  },
+
+  filterGroup: {
+    display: "grid",
+    gap: 6,
+  },
+
+  filterLabel: {
+    fontSize: 11,
+    fontWeight: 800,
+    color: "#9ca3af",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+
+  searchInput: {
+    width: "100%",
+    boxSizing: "border-box",
     border: "1px solid #d1d5db",
-    fontSize: 14
+    borderRadius: 12,
+    padding: "11px 12px",
+    background: "#ffffff",
+    color: "#111827",
+    outline: "none",
+    fontSize: 14,
   },
+
+  select: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #d1d5db",
+    borderRadius: 12,
+    padding: "11px 12px",
+    background: "#ffffff",
+    color: "#111827",
+    fontWeight: 700,
+    outline: "none",
+    fontSize: 14,
+  },
+
+  resetButton: {
+    padding: "11px 14px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#f8fafc",
+    color: "#374151",
+    cursor: "pointer",
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+    height: 42,
+  },
+
+  jobsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 16,
+  },
+
+  jobCard: {
+    background: "#ffffff",
+    borderRadius: 18,
+    padding: 20,
+    border: "1px solid #f1f5f9",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+  },
+
+  jobHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "flex-start",
+    marginBottom: 16,
+  },
+
+  jobEyebrow: {
+    fontSize: 11,
+    fontWeight: 800,
+    color: "#6366f1",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+
+  jobTitle: {
+    margin: 0,
+    color: "#111827",
+    fontSize: 20,
+    letterSpacing: "-0.02em",
+  },
+
+  jobMeta: {
+    marginTop: 8,
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 7,
+    color: "#64748b",
+    fontSize: 13,
+  },
+
+  scoreBadge: {
+    minWidth: 64,
+    height: 64,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: 18,
+    flexShrink: 0,
+  },
+
+  scoreHigh: {
+    background: "#dcfce7",
+    color: "#166534",
+  },
+
+  scoreMedium: {
+    background: "#fef3c7",
+    color: "#92400e",
+  },
+
+  scoreLow: {
+    background: "#fee2e2",
+    color: "#991b1b",
+  },
+
+  jobInfoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  miniInfo: {
+    padding: 10,
+    borderRadius: 12,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    minWidth: 0,
+  },
+
+  badgeRow: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    marginBottom: 14,
+  },
+
+  softBadge: {
+    padding: "7px 10px",
+    borderRadius: 999,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    color: "#475569",
+    fontWeight: 700,
+    fontSize: 12,
+  },
+
+  mlBadge: {
+    padding: "7px 10px",
+    borderRadius: 999,
+    background: "#eef2ff",
+    border: "1px solid #c7d2fe",
+    color: "#3730a3",
+    fontWeight: 800,
+    fontSize: 12,
+  },
+
+  statusBlock: {
+    padding: 12,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    marginBottom: 14,
+  },
+
+  statusLabel: {
+    display: "grid",
+    gap: 8,
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+
+  statusSelect: {
+    width: "100%",
+    border: "1px solid #d1d5db",
+    borderRadius: 10,
+    padding: "9px 10px",
+    background: "#ffffff",
+    color: "#111827",
+    fontWeight: 700,
+    outline: "none",
+  },
+
   actions: {
     display: "flex",
     gap: 10,
-    flexWrap: "wrap"
+    flexWrap: "wrap",
   },
+
   primaryButton: {
     padding: "10px 14px",
-    borderRadius: 8,
+    borderRadius: 10,
     border: "none",
     background: "#111827",
-    color: "white",
+    color: "#ffffff",
     cursor: "pointer",
-    fontWeight: 600
+    fontWeight: 800,
+    whiteSpace: "nowrap",
   },
+
   secondaryButton: {
     padding: "10px 14px",
-    borderRadius: 8,
+    borderRadius: 10,
     border: "1px solid #d1d5db",
-    background: "white",
+    background: "#ffffff",
     color: "#111827",
     cursor: "pointer",
-    fontWeight: 600
+    fontWeight: 800,
+    whiteSpace: "nowrap",
   },
+
   deleteButton: {
     padding: "10px 14px",
-    borderRadius: 8,
-    border: "none",
-    background: "#dc2626",
-    color: "white",
+    borderRadius: 10,
+    border: "1px solid #fecaca",
+    background: "#fff1f2",
+    color: "#b91c1c",
     cursor: "pointer",
-    fontWeight: 600
+    fontWeight: 800,
+    whiteSpace: "nowrap",
   },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: 700,
-    color: "#111827",
-    marginBottom: 10
-  },
-  emptyText: {
-    color: "#6b7280",
-    lineHeight: 1.7
-  },
+
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(17, 24, 39, 0.45)",
+    background: "rgba(15, 23, 42, 0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 999
+    zIndex: 9999,
+    padding: 20,
   },
-  modal: {
+
+  offerModal: {
     width: "100%",
-    maxWidth: 760,
-    background: "white",
-    borderRadius: 16,
-    padding: 24,
-    boxShadow: "0 20px 40px rgba(0,0,0,0.18)"
+    maxWidth: 480,
+    background: "#ffffff",
+    borderRadius: 24,
+    padding: 28,
+    boxShadow: "0 24px 70px rgba(15, 23, 42, 0.25)",
+    textAlign: "center",
+    border: "1px solid #fde68a",
   },
-  modalTitle: {
-    marginTop: 0,
-    marginBottom: 10,
-    color: "#111827"
-  },
-  modalText: {
-    color: "#4b5563",
-    lineHeight: 1.7,
-    marginBottom: 16
-  },
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14
-  },
-  field: {
+
+  offerModalIcon: {
+    width: 72,
+    height: 72,
+    margin: "0 auto 14px",
+    borderRadius: "50%",
+    background: "#fef3c7",
     display: "flex",
-    flexDirection: "column",
-    gap: 8
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 38,
   },
-  label: {
+
+  offerModalTitle: {
+    margin: "0 0 10px",
+    color: "#111827",
+    fontSize: 28,
+    letterSpacing: "-0.03em",
+  },
+
+  offerModalText: {
+    margin: "0 0 22px",
+    color: "#475569",
     fontSize: 14,
-    color: "#374151",
-    fontWeight: 600
+    lineHeight: 1.7,
   },
-  input: {
-    padding: 12,
-    borderRadius: 8,
-    border: "1px solid #d1d5db",
-    fontSize: 14
-  },
-  modalActions: {
+
+  offerModalActions: {
     display: "flex",
-    gap: 12,
+    justifyContent: "center",
+    gap: 10,
     flexWrap: "wrap",
-    marginTop: 20
-  }
+  },
+
+  offerModalPrimaryButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "none",
+    background: "#111827",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 900,
+  },
+
+  offerModalSecondaryButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#ffffff",
+    color: "#111827",
+    cursor: "pointer",
+    fontWeight: 900,
+  },
+
+  emptyState: {
+    minHeight: 120,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    color: "#94a3b8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    padding: 18,
+    fontSize: 13,
+    marginBottom: 16,
+  },
 };

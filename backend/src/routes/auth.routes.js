@@ -1,130 +1,360 @@
-// src/routes/auth.routes.js
-// Rol: definește rutele de autentificare (register + login) și emite JWT pentru acces la rutele protejate
+const express = require("express");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
-const express = require("express");            // Importă framework-ul Express pentru routing și API
-const bcrypt = require("bcrypt");              // Librărie pentru hashing de parole (securitate)
-const jwt = require("jsonwebtoken");           // Librărie pentru generarea și verificarea JSON Web Tokens
-const db = require("../config/db");            // Importă conexiunea la baza de date MySQL (pool)
+const db = require("../config/db");
+const auth = require("../middleware/auth.middleware");
+const {
+  sendVerificationEmail,
+  sendResetPasswordEmail,
+} = require("../services/email.service");
 
-const router = express.Router();               // Creează un router modular pentru rutele de auth
+const router = express.Router();
 
-/**
- * POST /api/auth/register
- * body: { name, email, password }
- * Creează un utilizator nou în baza de date
- */
-router.post("/register", async (req, res) => {  // Definește ruta POST /register (creare user)
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
+
+function createRandomToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function addHours(hours) {
+  const date = new Date();
+  date.setHours(date.getHours() + hours);
+  return date;
+}
+
+function isValidEmail(email) {
+  return String(email || "").includes("@");
+}
+
+function isValidPassword(password) {
+  return String(password || "").length >= 8;
+}
+
+function createJwtToken(user) {
+  return jwt.sign(
+    {
+      userId: user.id,
+      email: user.email,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "7d",
+    },
+  );
+}
+
+/* REGISTER */
+router.post("/register", async (req, res) => {
   try {
-    const { name, email, password } = req.body; // Extrage datele din request body (trimise de frontend)
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "")
+      .trim()
+      .toLowerCase();
+    const password = String(req.body.password || "");
 
-    // Validare minimă: verifică dacă toate câmpurile există
     if (!name || !email || !password) {
-      return res.status(400).json({              // 400 = Bad Request
+      return res.status(400).json({
         ok: false,
-        error: "Missing fields"
+        error: "Missing fields",
       });
     }
 
-    // Hash parola cu bcrypt pentru securitate
-    const passwordHash = await bcrypt.hash(password, 10); 
-    // 10 = saltRounds (numărul de iterări criptografice)
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid email",
+      });
+    }
 
-    // Inserează utilizatorul în baza de date
-    await db.query(
-      "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
-      [name, email, passwordHash]               // Parametrii pentru query (protejează de SQL injection)
+    if (!isValidPassword(password)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Password must have at least 8 characters",
+      });
+    }
+
+    const [existingUsers] = await db.query(
+      `
+      SELECT id
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+      `,
+      [email],
     );
 
-    // Trimite răspuns de succes
-    return res.status(201).json({               // 201 = resource created
-      ok: true,
-      message: "User created"
-    });
-
-  } catch (err) {
-
-    // Dacă emailul există deja (constraint UNIQUE în DB)
-    if (err.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({             // 409 = conflict
+    if (existingUsers.length > 0) {
+      return res.status(409).json({
         ok: false,
-        error: "Email already in use"
+        error: "Email already in use",
       });
     }
 
-    console.error(err);                         // Afișează eroarea în terminal (debug)
+    const passwordHash = await bcrypt.hash(password, 12);
+    const verificationToken = createRandomToken();
+    const verificationExpires = addHours(24);
 
-    return res.status(500).json({               // 500 = server error
+    await db.query(
+      `
+      INSERT INTO users (
+        name,
+        email,
+        password_hash,
+        email_verified,
+        email_verification_token,
+        email_verification_expires,
+        password_reset_token,
+        password_reset_expires
+      )
+      VALUES (?, ?, ?, 0, ?, ?, NULL, NULL)
+      `,
+      [name, email, passwordHash, verificationToken, verificationExpires],
+    );
+
+    await sendVerificationEmail({
+      email,
+      token: verificationToken,
+    });
+
+    return res.status(201).json({
+      ok: true,
+      message:
+        "Cont creat. Verifică emailul pentru activare. Dacă SMTP nu este configurat, linkul apare în terminal.",
+    });
+  } catch (err) {
+    console.error("REGISTER ERROR:", err);
+
+    return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Server error",
     });
   }
 });
 
-/**
- * POST /api/auth/login
- * body: { email, password }
- * Autentifică utilizatorul și returnează un JWT token
- */
-router.post("/login", async (req, res) => {      // Definește ruta POST /login
+/* VERIFY EMAIL */
+router.get("/verify-email", async (req, res) => {
   try {
-    const { email, password } = req.body;       // Extrage email și parolă din request
+    const token = String(req.query.token || "").trim();
 
-    // Validare minimă
+    if (!token) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing token",
+      });
+    }
+
+    const [users] = await db.query(
+      `
+      SELECT id, email_verified, email_verification_expires
+      FROM users
+      WHERE email_verification_token = ?
+      LIMIT 1
+      `,
+      [token],
+    );
+
+    if (users.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid token",
+      });
+    }
+
+    const user = users[0];
+
+    if (Number(user.email_verified) === 1) {
+      return res.json({
+        ok: true,
+        message: "Email already verified",
+      });
+    }
+
+    const expiresAt = new Date(user.email_verification_expires);
+    const now = new Date();
+
+    if (expiresAt < now) {
+      return res.status(400).json({
+        ok: false,
+        error: "Token expired",
+      });
+    }
+
+    await db.query(
+      `
+      UPDATE users
+      SET
+        email_verified = 1,
+        email_verification_token = NULL,
+        email_verification_expires = NULL
+      WHERE id = ?
+      `,
+      [user.id],
+    );
+
+    return res.json({
+      ok: true,
+      message: "Email verified",
+    });
+  } catch (err) {
+    console.error("VERIFY EMAIL ERROR:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+    });
+  }
+});
+
+/* LOGIN */
+router.post("/login", async (req, res) => {
+  try {
+    const email = String(req.body.email || "")
+      .trim()
+      .toLowerCase();
+    const password = String(req.body.password || "");
+
     if (!email || !password) {
       return res.status(400).json({
         ok: false,
-        error: "Missing fields"
+        error: "Missing fields",
       });
     }
 
-    // Caută utilizatorul în baza de date după email
-    const [rows] = await db.query(
-      "SELECT * FROM users WHERE email = ? LIMIT 1",
-      [email]
+    const [users] = await db.query(
+      `
+      SELECT
+        id,
+        name,
+        email,
+        password_hash,
+        email_verified
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+      `,
+      [email],
     );
 
-    // Dacă nu există user cu acel email
-    if (rows.length === 0) {
-      return res.status(401).json({             // 401 = unauthorized
-        ok: false,
-        error: "Invalid credentials"
-      });
-    }
-
-    const user = rows[0];                       // Extrage userul din rezultatul query-ului
-
-    // Compară parola introdusă cu hash-ul stocat în DB
-    const isValid = await bcrypt.compare(password, user.password_hash);
-
-    // Dacă parola nu este corectă
-    if (!isValid) {
+    if (users.length === 0) {
       return res.status(401).json({
         ok: false,
-        error: "Invalid credentials"
+        error: "Invalid credentials",
       });
     }
 
-    // Creează token JWT
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },   // Payload-ul tokenului (datele incluse)
-      process.env.JWT_SECRET,                   // Cheia secretă pentru semnarea tokenului
-      { expiresIn: "2h" }                       // Tokenul expiră după 2 ore
-    );
+    const user = users[0];
 
-    // Trimite tokenul și datele userului către frontend
-    return res.status(200).json({
+    const passwordOk = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordOk) {
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid credentials",
+      });
+    }
+
+    if (Number(user.email_verified) !== 1) {
+      return res.status(403).json({
+        ok: false,
+        error: "Email not verified",
+      });
+    }
+
+    const token = createJwtToken(user);
+
+    return res.json({
       ok: true,
       token,
       user: {
         id: user.id,
         name: user.name,
-        email: user.email
-      }
+        email: user.email,
+      },
     });
-
   } catch (err) {
+    console.error("LOGIN ERROR:", err);
 
-    console.error(err);                         // Log eroare în terminal
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+    });
+  }
+});
+
+/* ME */
+router.get("/me", auth, async (req, res) => {
+  try {
+    const [users] = await db.query(
+      `
+      SELECT id, name, email
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.user.userId],
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "User not found",
+      });
+    }
+
+    return res.json({
+      ok: true,
+      user: users[0],
+    });
+  } catch (err) {
+    console.error("ME ERROR:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+    });
+  }
+});
+router.get("/me", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [users] = await db.query(
+      `
+      SELECT
+        id,
+        name,
+        email,
+        city,
+        university,
+        specialization,
+        study_year,
+        target_role,
+        preferred_work_mode,
+        preferred_employment_type,
+        bio,
+        created_at
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "User not found"
+      });
+    }
+
+    return res.json({
+      ok: true,
+      user: users[0]
+    });
+  } catch (err) {
+    console.error("ME ERROR:", err);
 
     return res.status(500).json({
       ok: false,
@@ -132,5 +362,135 @@ router.post("/login", async (req, res) => {      // Definește ruta POST /login
     });
   }
 });
+/* FORGOT PASSWORD */
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const email = String(req.body.email || "")
+      .trim()
+      .toLowerCase();
 
-module.exports = router;                        // Exportă routerul pentru a fi folosit în server.js
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Email is required",
+      });
+    }
+
+    const [users] = await db.query(
+      `
+      SELECT id, email
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+      `,
+      [email],
+    );
+
+    if (users.length === 0) {
+      return res.json({
+        ok: true,
+        message: "Dacă emailul există, vei primi un link de resetare.",
+      });
+    }
+
+    const resetToken = createRandomToken();
+    const resetExpires = addHours(1);
+
+    await db.query(
+      `
+      UPDATE users
+      SET
+        password_reset_token = ?,
+        password_reset_expires = ?
+      WHERE id = ?
+      `,
+      [resetToken, resetExpires, users[0].id],
+    );
+
+    await sendResetPasswordEmail({
+      email,
+      token: resetToken,
+    });
+
+    return res.json({
+      ok: true,
+      message: "Dacă emailul există, vei primi un link de resetare.",
+      devResetLink: `${process.env.FRONTEND_URL || "http://localhost:5175"}/reset-password/${resetToken}`,
+    });
+  } catch (err) {
+    console.error("FORGOT PASSWORD ERROR:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+    });
+  }
+});
+
+/* RESET PASSWORD */
+router.post("/reset-password", async (req, res) => {
+  try {
+    const token = String(req.body.token || "").trim();
+    const newPassword = String(req.body.newPassword || "");
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        ok: false,
+        error: "Token and new password are required",
+      });
+    }
+
+    if (!isValidPassword(newPassword)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Password must have at least 8 characters",
+      });
+    }
+
+    const [users] = await db.query(
+      `
+      SELECT id
+      FROM users
+      WHERE password_reset_token = ?
+        AND password_reset_expires > NOW()
+      LIMIT 1
+      `,
+      [token],
+    );
+
+    if (users.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid or expired reset token",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await db.query(
+      `
+      UPDATE users
+      SET
+        password_hash = ?,
+        password_reset_token = NULL,
+        password_reset_expires = NULL
+      WHERE id = ?
+      `,
+      [passwordHash, users[0].id],
+    );
+
+    return res.json({
+      ok: true,
+      message: "Parola a fost resetată cu succes.",
+    });
+  } catch (err) {
+    console.error("RESET PASSWORD ERROR:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+    });
+  }
+});
+
+module.exports = router;

@@ -1,806 +1,1162 @@
-import { useEffect, useState } from "react";
-import { apiFetch } from "../services/api";
-import AppLayout from "../components/AppLayout";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 
-const CATEGORY_COLORS = {
-  Data: "#3b82f6",
-  ML: "#8b5cf6",
-  DevOps: "#f59e0b",
-  Dev: "#10b981",
-  Business: "#ef4444"
+import AppLayout from "../components/AppLayout";
+import { apiFetch } from "../services/api";
+import MesajFeedback from "../components/MesajFeedback";
+
+const CHART_COLORS = [
+  "#378ADD",
+  "#7F77DD",
+  "#1D9E75",
+  "#EF9F27",
+  "#E05D5D",
+  "#14B8A6",
+  "#8B5CF6",
+  "#F97316",
+  "#64748B"
+];
+
+const COMPATIBILITY_LABELS = {
+  high: "Compatibilitate mare",
+  medium: "Compatibilitate medie",
+  low: "Compatibilitate redusă"
 };
 
+function toNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function toPercent(value) {
+  return `${Math.round(toNumber(value) * 100)}%`;
+}
+
+function truncate(text, max = 26) {
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function normalizeJobs(data) {
+  if (Array.isArray(data?.jobs)) return data.jobs;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
 export default function Analytics() {
-  const [marketData, setMarketData] = useState(null);
-  const [loadingMarket, setLoadingMarket] = useState(true);
+  const [market, setMarket] = useState(null);
+  const [profileVsMarket, setProfileVsMarket] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [localExplanation, setLocalExplanation] = useState(null);
+  const [mlMetrics, setMlMetrics] = useState(null);
+  const [showMlDetails, setShowMlDetails] = useState(false);
 
-  const [profileData, setProfileData] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
-
-  const [expandedCategories, setExpandedCategories] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [loadingExplanation, setLoadingExplanation] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetchMarket();
-    fetchProfileVsMarket();
+    loadAnalytics();
   }, []);
 
-  async function fetchMarket() {
-    setLoadingMarket(true);
+  async function loadAnalytics() {
+    setLoading(true);
+    setMessage("");
 
     try {
-      const data = await apiFetch("/api/analytics/market");
-      setMarketData(data);
-    } catch (err) {
-      console.error("MARKET ANALYTICS ERROR:", err);
-      setMessage(err.message || "Eroare la încărcarea datelor de piață.");
-    } finally {
-      setLoadingMarket(false);
-    }
-  }
+      const [marketData, profileData, jobsData, mlData] = await Promise.all([
+        apiFetch("/api/analytics/market"),
+        apiFetch("/api/analytics/profile-vs-market"),
+        apiFetch("/api/jobs"),
+        apiFetch("/api/ml/job-category/metrics").catch(() => ({ metrics: null }))
+      ]);
 
-  async function fetchProfileVsMarket() {
-    setLoadingProfile(true);
+      setMarket(marketData);
+      setProfileVsMarket(profileData);
+      setMlMetrics(mlData.metrics || null);
 
-    try {
-      const data = await apiFetch("/api/analytics/profile-vs-market");
-      setProfileData(data);
-    } catch (err) {
-      console.error("PROFILE VS MARKET ERROR:", err);
-      setMessage(err.message || "Eroare la încărcarea comparației cu piața.");
-    } finally {
-      setLoadingProfile(false);
-    }
-  }
+      const normalizedJobs = normalizeJobs(jobsData);
+      setJobs(normalizedJobs);
 
-  function toggleCategory(category) {
-    setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
-      } else {
-        next.add(category);
+      const firstJob = normalizedJobs[0];
+
+      if (firstJob?.id) {
+        setSelectedJobId(String(firstJob.id));
+        loadLocalExplanation(firstJob.id);
       }
-      return next;
-    });
+    } catch (err) {
+      console.error("ANALYTICS LOAD ERROR:", err);
+      setMessage(err.message || "Nu s-au putut încărca datele analytics.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function scoreColor(score) {
-    if (score >= 70) return "#16a34a";
-    if (score >= 40) return "#d97706";
-    return "#dc2626";
+  async function loadLocalExplanation(jobId) {
+    if (!jobId) return;
+
+    setLoadingExplanation(true);
+
+    try {
+      const data = await apiFetch(`/api/analytics/shap/${jobId}`);
+      setLocalExplanation(data);
+    } catch (err) {
+      console.error("LOCAL EXPLANATION LOAD ERROR:", err);
+      setLocalExplanation(null);
+    } finally {
+      setLoadingExplanation(false);
+    }
   }
 
-  function gapColor(gap) {
-    if (gap >= 0) return "#16a34a";
-    if (gap >= -15) return "#d97706";
-    return "#dc2626";
+  function handleJobChange(event) {
+    const value = event.target.value;
+    setSelectedJobId(value);
+    loadLocalExplanation(value);
   }
+
+  const compatibilityData = useMemo(() => {
+    const distribution = market?.distribution || {};
+
+    return Object.entries(distribution).map(([key, value], index) => ({
+      key,
+      name: COMPATIBILITY_LABELS[key] || key,
+      total: toNumber(value),
+      fill: CHART_COLORS[index % CHART_COLORS.length]
+    }));
+  }, [market]);
+
+  const skillImpactData = useMemo(() => {
+    return (market?.skillsImpact || []).slice(0, 10).map((skill) => ({
+      name: skill.name,
+      impact: toNumber(skill.avgGain),
+      jobsAffected: toNumber(skill.jobsAffected),
+      category: skill.category
+    }));
+  }, [market]);
+
+  const profileCoverageData = useMemo(() => {
+    return (profileVsMarket?.categories || []).slice(0, 8).map((category) => ({
+      name: category.category,
+      coverage: toNumber(category.coveragePercent),
+      marketNeeds: toNumber(category.marketNeeds),
+      coveredRequired: toNumber(category.coveredRequired)
+    }));
+  }, [profileVsMarket]);
+
+  const topGapCategories = useMemo(() => {
+    return (profileVsMarket?.categories || [])
+      .filter((category) => category.missingSkills?.length > 0)
+      .slice(0, 5);
+  }, [profileVsMarket]);
+
+  const explanationData = useMemo(() => {
+    return (localExplanation?.explanations || []).slice(0, 8).map((item) => ({
+      name: item.skill,
+      gain: toNumber(item.shapValue),
+      scoreWith: toNumber(item.scoreWith),
+      category: item.category
+    }));
+  }, [localExplanation]);
+
+  const testedModelsData = useMemo(() => {
+    return (mlMetrics?.tested_models || []).map((model) => ({
+      name: model.model,
+      accuracy: toNumber(model.accuracy),
+      macroF1: toNumber(model.macro_f1),
+      cvMacroF1: toNumber(model.cv_macro_f1)
+    }));
+  }, [mlMetrics]);
+
+  const selectedJob = jobs.find((job) => String(job.id) === selectedJobId);
+  const bestModel = mlMetrics?.best_model || null;
 
   return (
     <AppLayout
       title="Analytics"
-      subtitle="Înțelege cum te poziționezi față de piața muncii"
+      subtitle="Analiză avansată a profilului tău în raport cu joburile salvate."
     >
-      {message && <div style={styles.message}>{message}</div>}
+      {message && <MesajFeedback message={message} type="error" />}
 
-      <div style={styles.card}>
-        <div style={styles.sectionLabel}>Portofoliul tău de joburi</div>
-
-        {loadingMarket ? (
-          <div style={styles.loadingText}>Se încarcă...</div>
-        ) : !marketData || marketData.totalJobs === 0 ? (
-          <div style={styles.emptyBox}>
-            Nu ai joburi salvate. Adaugă joburi din pagina{" "}
-            <strong>Analiză job</strong> pentru a vedea analiza.
-          </div>
-        ) : (
-          <div style={styles.statGrid}>
-            {marketData.bestNextSkill && (
-              <div style={{ ...styles.statCard, borderColor: "#86efac" }}>
-                <div style={styles.statLabel}>skill prioritar acum</div>
-                <div
-                  style={{
-                    fontSize: 28,
-                    fontWeight: 800,
-                    color: "#16a34a",
-                    lineHeight: 1.2,
-                    marginTop: 8,
-                    marginBottom: 6
-                  }}
-                >
-                  {marketData.bestNextSkill.name}
-                </div>
-                <div style={styles.statSub}>
-                  cel mai frecvent cerut în joburile tale
-                </div>
-              </div>
-            )}
-
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>scor mediu portofoliu</div>
-              <div
-                style={{
-                  ...styles.statNumber,
-                  color: scoreColor(marketData.avgScore),
-                  marginTop: 6
-                }}
-              >
-                {marketData.avgScore}%
-              </div>
-              <div style={styles.statSub}>
-                {marketData.totalJobs} joburi analizate
-              </div>
-            </div>
-
-            <div style={{ ...styles.statCard, flex: 2 }}>
-              <div style={styles.statLabel}>Distribuție compatibilitate</div>
-              <div style={styles.distributionRow}>
-                <div style={styles.distItem}>
-                  <div style={{ ...styles.distNumber, color: "#16a34a" }}>
-                    {marketData.distribution.high}
-                  </div>
-                  <div style={styles.distBar}>
-                    <div
-                      style={{
-                        ...styles.distFill,
-                        width:
-                          marketData.totalJobs > 0
-                            ? `${Math.round(
-                                (marketData.distribution.high / marketData.totalJobs) * 100
-                              )}%`
-                            : "0%",
-                        background: "#16a34a"
-                      }}
-                    />
-                  </div>
-                  <div style={styles.distLabel}>înaltă{"\n"}&gt;70%</div>
-                </div>
-
-                <div style={styles.distItem}>
-                  <div style={{ ...styles.distNumber, color: "#d97706" }}>
-                    {marketData.distribution.medium}
-                  </div>
-                  <div style={styles.distBar}>
-                    <div
-                      style={{
-                        ...styles.distFill,
-                        width:
-                          marketData.totalJobs > 0
-                            ? `${Math.round(
-                                (marketData.distribution.medium / marketData.totalJobs) * 100
-                              )}%`
-                            : "0%",
-                        background: "#d97706"
-                      }}
-                    />
-                  </div>
-                  <div style={styles.distLabel}>medie{"\n"}40-70%</div>
-                </div>
-
-                <div style={styles.distItem}>
-                  <div style={{ ...styles.distNumber, color: "#dc2626" }}>
-                    {marketData.distribution.low}
-                  </div>
-                  <div style={styles.distBar}>
-                    <div
-                      style={{
-                        ...styles.distFill,
-                        width:
-                          marketData.totalJobs > 0
-                            ? `${Math.round(
-                                (marketData.distribution.low / marketData.totalJobs) * 100
-                              )}%`
-                            : "0%",
-                        background: "#dc2626"
-                      }}
-                    />
-                  </div>
-                  <div style={styles.distLabel}>scăzută{"\n"}&lt;40%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div style={styles.card}>
-        <div style={styles.sectionLabel}>Profilul tău față de piață</div>
-        <div style={styles.sectionSubtitle}>
-          Cât din ce cer joburile tale acoperi — apasă pe categorie pentru detalii
+      {loading ? (
+        <div style={styles.card}>
+          <div style={styles.muted}>Se încarcă datele analytics...</div>
         </div>
+      ) : (
+        <>
+          <div style={styles.heroCard}>
+            <div>
+              <div style={styles.heroEyebrow}>SkillTrack Intelligence</div>
 
-        {loadingProfile ? (
-          <div style={styles.loadingText}>Se calculează...</div>
-        ) : !profileData || profileData.categories.length === 0 ? (
-          <div style={styles.emptyBox}>
-            {profileData?.message || "Nu există date suficiente pentru comparație."}
+              <h1 style={styles.heroTitle}>Analiză profil vs piață</h1>
+
+              <p style={styles.heroText}>
+                Vezi cât de bine se potrivește profilul tău cu joburile salvate,
+                ce skilluri lipsesc și ce acțiuni îți pot crește scorul mediu de
+                compatibilitate.
+              </p>
+            </div>
+
+            <div style={styles.heroScore}>
+              <span>Scor mediu</span>
+              <strong>{market?.avgScore || 0}%</strong>
+              <p>compatibilitate medie pe joburile salvate</p>
+            </div>
           </div>
-        ) : (
-          <>
-            {profileData.categories.map((cat) => {
-              const color = CATEGORY_COLORS[cat.category] || "#6b7280";
-              const isExpanded = expandedCategories.has(cat.category);
-              const pct = cat.coveragePercent ?? 0;
-              const hasGap = cat.missingSkills && cat.missingSkills.length > 0;
 
-              const barColor = hasGap
-                ? pct < 50
-                  ? "#dc2626"
-                  : "#d97706"
-                : "#16a34a";
+          <div style={styles.gridFour}>
+            <MetricCard
+              label="Joburi analizate"
+              value={market?.totalJobs || 0}
+              helper="folosite în analiza pieței"
+              accent="#378ADD"
+            />
 
-              return (
-                <div key={cat.category} style={styles.categoryBlock}>
-                  <button
-                    style={styles.categoryHeader}
-                    onClick={() => toggleCategory(cat.category)}
-                  >
-                    <div style={styles.categoryLeft}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: 6
-                        }}
-                      >
-                        <span style={{ ...styles.categoryName, color }}>
-                          {cat.category}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: barColor
-                          }}
-                        >
-                          {pct}%
-                        </span>
+            <MetricCard
+              label="Skill recomandat"
+              value={market?.bestNextSkill?.name || "-"}
+              helper={
+                market?.bestNextSkill
+                  ? `+${market.bestNextSkill.avgGain}% scor mediu`
+                  : "nu există încă date"
+              }
+              accent="#1D9E75"
+            />
+
+            <MetricCard
+              label="Skilluri cu impact"
+              value={market?.skillsImpact?.length || 0}
+              helper="skilluri lipsă care pot crește scorul"
+              accent="#7F77DD"
+            />
+
+            <MetricCard
+              label="Categorii analizate"
+              value={profileVsMarket?.categories?.length || 0}
+              helper="zone de competență comparate"
+              accent="#EF9F27"
+            />
+          </div>
+
+          <div style={styles.priorityCard}>
+            <div>
+              <div style={styles.sectionLabel}>Recomandare principală</div>
+              <h2 style={styles.priorityTitle}>
+                {market?.bestNextSkill?.name || "Nu există încă un skill prioritar"}
+              </h2>
+
+              <p style={styles.priorityText}>
+                {market?.bestNextSkill
+                  ? `Acest skill afectează ${market.bestNextSkill.jobsAffected} joburi și ar putea crește scorul mediu cu aproximativ ${market.bestNextSkill.avgGain}%.`
+                  : "Adaugă mai multe joburi și competențe pentru a primi o recomandare relevantă."}
+              </p>
+            </div>
+
+            <div style={styles.priorityCircle}>
+              {market?.bestNextSkill ? `+${market.bestNextSkill.avgGain}%` : "-"}
+            </div>
+          </div>
+
+          <div style={styles.gridTwo}>
+            <div style={styles.card}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Profil vs piață</div>
+                  <h2 style={styles.sectionTitle}>Acoperire pe categorii</h2>
+                </div>
+              </div>
+
+              {profileCoverageData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={profileCoverageData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(value) => `${value}%`} />
+                    <ChartTooltip />
+                    <Bar dataKey="coverage" name="Acoperire" radius={[8, 8, 0, 0]}>
+                      {profileCoverageData.map((entry, index) => (
+                        <Cell
+                          key={entry.name}
+                          fill={CHART_COLORS[index % CHART_COLORS.length]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState message="Nu există date pentru comparația profil vs piață." />
+              )}
+            </div>
+
+            <div style={styles.card}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Gap analysis</div>
+                  <h2 style={styles.sectionTitle}>Categorii prioritare</h2>
+                </div>
+              </div>
+
+              <p style={styles.insightText}>
+                {profileVsMarket?.insight ||
+                  "Nu există încă o interpretare disponibilă."}
+              </p>
+
+              <div style={styles.gapList}>
+                {topGapCategories.length > 0 ? (
+                  topGapCategories.map((category) => (
+                    <div key={category.category} style={styles.gapCard}>
+                      <div style={styles.gapTop}>
+                        <div>
+                          <strong>{category.category}</strong>
+                          <span>
+                            {category.coveredRequired}/{category.marketNeeds}{" "}
+                            skilluri acoperite
+                          </span>
+                        </div>
+                        <b>{category.coveragePercent}%</b>
                       </div>
 
-                      <div style={styles.coverageTrack}>
+                      <div style={styles.progressBar}>
                         <div
                           style={{
-                            ...styles.coverageFill,
-                            width: `${pct}%`,
-                            background: barColor,
-                            transition: "width 0.6s ease"
+                            ...styles.progressFill,
+                            width: `${category.coveragePercent}%`
                           }}
                         />
                       </div>
 
-                      <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
-                        {hasGap ? (
-                          <>
-                            <span style={{ color: barColor, fontWeight: 600 }}>
-                              {cat.coveredRequired}/{cat.marketNeeds} skills cerute acoperite
-                            </span>
-                            {" · lipsesc: "}
-                            <span style={{ color: "#dc2626", fontWeight: 600 }}>
-                              {cat.missingSkills.join(", ")}
-                            </span>
-                          </>
-                        ) : (
-                          <span style={{ color: "#16a34a", fontWeight: 600 }}>
-                            Toate {cat.marketNeeds} skills cerute acoperite ✓
-                            {cat.extraSkills && cat.extraSkills.length > 0 && (
-                              <span style={{ color: "#9ca3af", fontWeight: 400 }}>
-                                {" · în plus: "}
-                                {cat.extraSkills.slice(0, 2).join(", ")}
-                                {cat.extraSkills.length > 2
-                                  ? ` +${cat.extraSkills.length - 2}`
-                                  : ""}
-                              </span>
-                            )}
+                      <div style={styles.skillChips}>
+                        {(category.missingSkills || []).slice(0, 5).map((skill) => (
+                          <span key={skill} style={styles.chip}>
+                            {skill}
                           </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState message="Nu există gapuri prioritare." />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.gridTwo}>
+            <div style={styles.card}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Skill impact</div>
+                  <h2 style={styles.sectionTitle}>
+                    Skilluri lipsă cu cel mai mare efect
+                  </h2>
+                </div>
+              </div>
+
+              {skillImpactData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={skillImpactData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(value) => `${value}%`} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={120}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <ChartTooltip />
+                    <Bar dataKey="impact" name="Impact estimat" radius={[0, 8, 8, 0]}>
+                      {skillImpactData.map((entry, index) => (
+                        <Cell
+                          key={entry.name}
+                          fill={CHART_COLORS[index % CHART_COLORS.length]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState message="Nu există skilluri lipsă cu impact calculat." />
+              )}
+            </div>
+
+            <div style={styles.card}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Compatibilitate</div>
+                  <h2 style={styles.sectionTitle}>Distribuția joburilor</h2>
+                </div>
+              </div>
+
+              {compatibilityData.length > 0 ? (
+                <>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={compatibilityData}
+                        dataKey="total"
+                        nameKey="name"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={3}
+                      >
+                        {compatibilityData.map((entry) => (
+                          <Cell key={entry.key} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <ChartTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  <div style={styles.legendList}>
+                    {compatibilityData.map((item) => (
+                      <div key={item.key} style={styles.legendRow}>
+                        <span
+                          style={{
+                            ...styles.colorDot,
+                            background: item.fill
+                          }}
+                        />
+                        <span style={styles.legendName}>{item.name}</span>
+                        <strong>{item.total}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <EmptyState message="Nu există joburi salvate pentru distribuție." />
+              )}
+            </div>
+          </div>
+
+          <div style={styles.cardLarge}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <div style={styles.sectionLabel}>Explicabilitate</div>
+                <h2 style={styles.sectionTitle}>Explicație locală pentru un job</h2>
+              </div>
+            </div>
+
+            <p style={styles.xaiIntro}>
+              Alege un job pentru a vedea ce skilluri lipsă ar putea contribui
+              cel mai mult la creșterea scorului de potrivire.
+            </p>
+
+            <label style={styles.selectLabel}>
+              Alege jobul analizat:
+              <select
+                value={selectedJobId}
+                onChange={handleJobChange}
+                style={styles.select}
+              >
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {truncate(job.title, 42)}{" "}
+                    {job.company ? `— ${truncate(job.company, 18)}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {loadingExplanation ? (
+              <div style={styles.muted}>Se generează explicația locală...</div>
+            ) : explanationData.length > 0 ? (
+              <>
+                <div style={styles.xaiSummary}>
+                  <strong>{selectedJob?.title || localExplanation?.jobTitle}</strong>
+                  <span>Scor curent: {localExplanation?.baseScore || 0}%</span>
+                </div>
+
+                <ResponsiveContainer width="100%" height={330}>
+                  <BarChart data={explanationData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(value) => `+${value}%`} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={130}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <ChartTooltip />
+                    <Bar
+                      dataKey="gain"
+                      name="Impact estimat asupra scorului"
+                      radius={[0, 8, 8, 0]}
+                    >
+                      {explanationData.map((entry, index) => (
+                        <Cell
+                          key={entry.name}
+                          fill={CHART_COLORS[index % CHART_COLORS.length]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
+            ) : (
+              <EmptyState
+                message={
+                  localExplanation?.message ||
+                  "Nu există explicații locale pentru acest job sau profilul acoperă deja cerințele detectate."
+                }
+              />
+            )}
+          </div>
+
+          <div style={styles.cardLarge}>
+            <div style={styles.dropdownHeader}>
+              <div>
+                <div style={styles.sectionLabel}>Detalii tehnice</div>
+                <h2 style={styles.sectionTitle}>Model ML și evaluare</h2>
+                <p style={styles.smallText}>
+                  Secțiune tehnică pentru documentație: modelul folosit,
+                  metricile de evaluare și interpretarea rezultatelor.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                style={styles.dropdownButton}
+                onClick={() => setShowMlDetails((prev) => !prev)}
+              >
+                {showMlDetails ? "Ascunde detaliile" : "Vezi detaliile ML"}
+                <span style={styles.dropdownArrow}>
+                  {showMlDetails ? "↑" : "↓"}
+                </span>
+              </button>
+            </div>
+
+            {showMlDetails && (
+              <>
+                {mlMetrics && bestModel ? (
+                  <>
+                    <div style={styles.mlIntro}>
+                      Modelul tratează analiza joburilor ca o problemă de{" "}
+                      <strong>clasificare multiclasă</strong>. Scopul este
+                      prezicerea categoriei profesionale a unui job pe baza
+                      descrierii, skillurilor extrase și atributelor jobului.
+                    </div>
+
+                    <div style={styles.gridFour}>
+                      <MetricCard
+                        label="Problemă"
+                        value="Multiclass"
+                        helper={mlMetrics.target || "category"}
+                        accent="#378ADD"
+                      />
+
+                      <MetricCard
+                        label="Model ales"
+                        value={bestModel.name || "-"}
+                        helper="selectat după macro F1"
+                        accent="#1D9E75"
+                      />
+
+                      <MetricCard
+                        label="Accuracy"
+                        value={toPercent(bestModel.accuracy)}
+                        helper="performanță pe test"
+                        accent="#7F77DD"
+                      />
+
+                      <MetricCard
+                        label="Macro F1"
+                        value={toPercent(bestModel.macro_f1)}
+                        helper="metrică echilibrată pe clase"
+                        accent="#EF9F27"
+                      />
+                    </div>
+
+                    <div style={styles.mlSplitGrid}>
+                      <MiniMetric
+                        label="Dataset total"
+                        value={mlMetrics.dataset_size}
+                        helper="joburi etichetate"
+                      />
+
+                      <MiniMetric
+                        label="Date antrenare"
+                        value={mlMetrics.train_size}
+                        helper="observații pentru antrenare"
+                      />
+
+                      <MiniMetric
+                        label="Date testare"
+                        value={mlMetrics.test_size}
+                        helper="observații pentru evaluare finală"
+                      />
+
+                      <MiniMetric
+                        label="CV Macro F1"
+                        value={toPercent(bestModel.cv_macro_f1)}
+                        helper="validare încrucișată"
+                      />
+                    </div>
+
+                    <div style={styles.gridTwoNoMargin}>
+                      <div style={styles.innerCard}>
+                        <div style={styles.sectionLabel}>Modele testate</div>
+
+                        {testedModelsData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={310}>
+                            <BarChart data={testedModelsData}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                              <XAxis
+                                dataKey="name"
+                                tick={{ fontSize: 11 }}
+                                interval={0}
+                                angle={-20}
+                                textAnchor="end"
+                                height={70}
+                              />
+                              <YAxis tickFormatter={(value) => `${value * 100}%`} />
+                              <ChartTooltip
+                                formatter={(value) => `${Math.round(value * 100)}%`}
+                              />
+                              <Bar
+                                dataKey="accuracy"
+                                name="Accuracy"
+                                radius={[8, 8, 0, 0]}
+                                fill="#378ADD"
+                              />
+                              <Bar
+                                dataKey="macroF1"
+                                name="Macro F1"
+                                radius={[8, 8, 0, 0]}
+                                fill="#1D9E75"
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <EmptyState message="Nu există modele testate salvate." />
                         )}
                       </div>
-                    </div>
 
-                    <div style={styles.categoryRight}>
-                      <div style={{ color: "#9ca3af", fontSize: 11 }}>
-                        {isExpanded ? "▲" : "▼"}
-                      </div>
-                    </div>
-                  </button>
+                      <div style={styles.innerCard}>
+                        <div style={styles.sectionLabel}>Interpretare rezultate</div>
 
-                  {isExpanded && (
-                    <div style={styles.skillsExpanded}>
-                      <div style={styles.legend}>
-                        <span style={styles.legendItem}>
-                          <span style={{ color: "#16a34a", fontWeight: 700 }}>✓</span>
-                          &nbsp;ai + cer joburile
-                        </span>
-                        <span style={styles.legendItem}>
-                          <span style={{ color: "#9ca3af" }}>✓</span>
-                          &nbsp;ai, dar nu cer joburile
-                        </span>
-                        <span style={styles.legendItem}>
-                          <span style={{ color: "#dc2626", fontWeight: 700 }}>✗</span>
-                          &nbsp;nu ai, dar cer joburile
-                        </span>
-                      </div>
+                        <div style={styles.mlExplanation}>
+                          <p>
+                            Cel mai bun model este <strong>{bestModel.name}</strong>,
+                            cu accuracy de{" "}
+                            <strong>{toPercent(bestModel.accuracy)}</strong> și
+                            macro F1 de{" "}
+                            <strong>{toPercent(bestModel.macro_f1)}</strong>.
+                          </p>
 
-                      <div style={styles.skillsList}>
-                        {cat.skills.map((skill) => {
-                          const bothHave = skill.userHas && skill.marketNeeds;
-                          const onlyUser = skill.userHas && !skill.marketNeeds;
-                          const onlyMarket = !skill.userHas && skill.marketNeeds;
+                          <p>
+                            Macro F1 este relevant deoarece datasetul conține mai
+                            multe clase de joburi, iar unele categorii pot avea
+                            mai puține exemple decât altele.
+                          </p>
 
-                          return (
-                            <div
-                              key={skill.id}
-                              style={{
-                                ...styles.skillRow,
-                                background: onlyMarket
-                                  ? "#fef2f2"
-                                  : bothHave
-                                  ? "#f0fdf4"
-                                  : "#f9fafb",
-                                borderColor: onlyMarket
-                                  ? "#fecaca"
-                                  : bothHave
-                                  ? "#bbf7d0"
-                                  : "#e5e7eb"
-                              }}
-                            >
-                              <span style={styles.skillIcon}>
-                                {bothHave && (
-                                  <span style={{ color: "#16a34a", fontWeight: 700 }}>
-                                    ✓
-                                  </span>
-                                )}
-                                {onlyUser && <span style={{ color: "#9ca3af" }}>✓</span>}
-                                {onlyMarket && (
-                                  <span style={{ color: "#dc2626", fontWeight: 700 }}>
-                                    ✗
-                                  </span>
-                                )}
-                              </span>
+                          <p>
+                            Împărțirea train/test folosește{" "}
+                            <strong>{mlMetrics.train_size}</strong> exemple pentru
+                            antrenare și <strong>{mlMetrics.test_size}</strong>{" "}
+                            exemple pentru testare, dintr-un total de{" "}
+                            <strong>{mlMetrics.dataset_size}</strong> joburi.
+                          </p>
 
-                              <span
-                                style={{
-                                  ...styles.skillRowName,
-                                  color: onlyMarket
-                                    ? "#991b1b"
-                                    : bothHave
-                                    ? "#166534"
-                                    : "#6b7280",
-                                  fontWeight: onlyMarket ? 600 : 400
-                                }}
-                              >
-                                {skill.name}
-                              </span>
+                          <p style={styles.warningText}>
+                            Predicțiile modelului sunt interpretate ca scoruri
+                            relative, nu ca certitudini absolute.
+                          </p>
+                        </div>
 
-                              <div style={styles.skillTags}>
-                                {skill.userHas && (
-                                  <span style={styles.tagUser}>în profilul tău</span>
-                                )}
-                                {skill.marketNeeds && (
-                                  <span style={styles.tagMarket}>cerut de joburi</span>
-                                )}
-                              </div>
+                        <div style={styles.modelTable}>
+                          {(mlMetrics.tested_models || []).map((model) => (
+                            <div key={model.model} style={styles.modelRow}>
+                              <strong>{model.model}</strong>
+                              <span>Accuracy: {toPercent(model.accuracy)}</span>
+                              <span>Macro F1: {toPercent(model.macro_f1)}</span>
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {profileData.insight && (
-              <div style={styles.insightBox}>
-                <span style={styles.insightIcon}>📊</span>
-                <span style={styles.insightText}>{profileData.insight}</span>
-              </div>
+                  </>
+                ) : (
+                  <EmptyState message="Nu există încă metrici ML. Rulează scriptul train_job_category_model.py." />
+                )}
+              </>
             )}
-          </>
-        )}
-      </div>
-
-      <div style={styles.card}>
-        <div style={styles.sectionLabel}>Predicție traiectorie</div>
-        <div style={styles.sectionSubtitle}>
-          Estimare scor la 30, 60 și 90 de zile bazată pe activitatea și profilul tău
-        </div>
-        <div style={styles.placeholderBox}>
-          <div style={styles.placeholderIcon}>🔮</div>
-          <div style={styles.placeholderTitle}>În curând</div>
-          <div style={styles.placeholderText}>
-            Predicția de traiectorie va fi disponibilă după integrarea
-            microserviciului ML. Va estima scorul tău folosind un model
-            de regresie logistică antrenat pe profilul tău de activitate.
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </AppLayout>
   );
 }
 
+function MetricCard({ label, value, helper, accent }) {
+  return (
+    <div style={{ ...styles.metricCard, borderLeft: `3px solid ${accent}` }}>
+      <div style={styles.metricLabel}>{label}</div>
+      <div style={styles.metricValue}>{value}</div>
+      <div style={styles.metricSub}>{helper}</div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value, helper }) {
+  return (
+    <div style={styles.mlBox}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{helper}</p>
+    </div>
+  );
+}
+
+function EmptyState({ message }) {
+  return (
+    <div style={styles.emptyState}>
+      <span>{message}</span>
+    </div>
+  );
+}
+
 const styles = {
-  message: {
-    marginBottom: 16,
-    padding: 12,
-    borderRadius: 12,
-    background: "#fff3cd",
-    color: "#92400e",
-    border: "1px solid #fcd34d"
+  muted: {
+    color: "#9ca3af",
+    fontSize: 14
   },
+
+  heroCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "stretch",
+    gap: 24,
+    marginBottom: 16,
+    padding: 24,
+    borderRadius: 20,
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.98))",
+    border: "1px solid #e0e7ff",
+    boxShadow: "0 16px 45px rgba(15,23,42,0.08)"
+  },
+
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: 800,
+    color: "#4f46e5",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+    marginBottom: 8
+  },
+
+  heroTitle: {
+    margin: 0,
+    fontSize: 32,
+    color: "#111827",
+    letterSpacing: "-0.04em"
+  },
+
+  heroText: {
+    margin: "10px 0 0",
+    color: "#64748b",
+    fontSize: 14,
+    lineHeight: 1.7,
+    maxWidth: 720
+  },
+
+  heroScore: {
+    minWidth: 250,
+    borderRadius: 18,
+    background: "#111827",
+    color: "white",
+    padding: 22,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 6
+  },
+
+  gridFour: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 14,
+    marginBottom: 16
+  },
+
+  gridTwo: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 16,
+    marginBottom: 16,
+    alignItems: "stretch"
+  },
+
+  gridTwoNoMargin: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 16,
+    alignItems: "stretch"
+  },
+
   card: {
     background: "white",
     borderRadius: 16,
-    padding: 24,
+    padding: 20,
     boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-    marginBottom: 20
+    border: "1px solid #f1f5f9"
   },
-  sectionLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    marginBottom: 6
-  },
-  sectionSubtitle: {
-    color: "#9ca3af",
-    fontSize: 14,
-    marginBottom: 20,
-    lineHeight: 1.5
-  },
-  subLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 12
-  },
-  loadingText: {
-    color: "#9ca3af",
-    fontSize: 14,
-    padding: "20px 0"
-  },
-  emptyBox: {
-    color: "#9ca3af",
-    fontSize: 14,
-    lineHeight: 1.7,
-    padding: "12px 0"
-  },
-  statGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: 16,
-    marginBottom: 8
-  },
-  statCard: {
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 18,
-    background: "#f9fafb"
-  },
-  statNumber: {
-    fontSize: 36,
-    fontWeight: 800,
-    color: "#111827",
-    lineHeight: 1.1,
-    marginBottom: 6
-  },
-  statTotal: {
-    fontSize: 20,
-    fontWeight: 500,
-    color: "#9ca3af"
-  },
-  statLabel: {
-    fontSize: 14,
-    color: "#374151",
-    fontWeight: 600,
-    marginBottom: 4
-  },
-  statSub: {
-    fontSize: 12,
-    color: "#9ca3af"
-  },
-  impactRow: {
-    display: "grid",
-    gridTemplateColumns: "28px 200px 1fr 110px",
-    gap: 12,
-    alignItems: "center",
-    padding: "9px 0",
-    borderBottom: "1px solid #f3f4f6"
-  },
-  rowRank: {
-    fontSize: 12,
-    color: "#9ca3af",
-    fontWeight: 700,
-    textAlign: "center"
-  },
-  rowSkill: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8
-  },
-  skillName: {
-    fontSize: 14,
-    color: "#111827",
-    fontWeight: 500
-  },
-  badge: {
-    fontSize: 10,
-    fontWeight: 700,
-    padding: "2px 7px",
-    borderRadius: 4,
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-    whiteSpace: "nowrap"
-  },
-  barTrack: {
-    height: 8,
-    background: "#e5e7eb",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  barFill: {
-    height: "100%",
-    borderRadius: 999,
-    transition: "width 0.5s ease"
-  },
-  rowValues: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 2,
-    fontSize: 13
-  },
-  distributionRow: {
-    display: "flex",
-    gap: 16,
-    marginTop: 12,
-    alignItems: "flex-end"
-  },
-  distItem: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 6
-  },
-  distNumber: {
-    fontSize: 28,
-    fontWeight: 800,
-    lineHeight: 1
-  },
-  distBar: {
-    width: "100%",
-    height: 8,
-    background: "#e5e7eb",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  distFill: {
-    height: "100%",
-    borderRadius: 999,
-    transition: "width 0.5s ease"
-  },
-  distLabel: {
-    fontSize: 11,
-    color: "#9ca3af",
-    textAlign: "center",
-    whiteSpace: "pre-line",
-    lineHeight: 1.4
-  },
-  coverageTrack: {
-    height: 8,
-    background: "#f3f4f6",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  coverageFill: {
-    height: "100%",
-    borderRadius: 999
-  },
-  categoryBlock: {
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    marginBottom: 10,
-    overflow: "hidden"
-  },
-  categoryHeader: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-    padding: "14px 18px",
+
+  cardLarge: {
     background: "white",
-    border: "none",
-    cursor: "pointer",
-    textAlign: "left",
-    fontFamily: "inherit"
+    borderRadius: 18,
+    padding: 22,
+    boxShadow: "0 12px 36px rgba(0,0,0,0.07)",
+    border: "1px solid #e0e7ff",
+    marginBottom: 16
   },
-  categoryLeft: {
-    flex: 1,
+
+  priorityCard: {
+    marginBottom: 16,
+    padding: 24,
+    borderRadius: 20,
+    background: "#111827",
+    color: "#ffffff",
     display: "flex",
-    flexDirection: "column",
-    gap: 6
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 20,
+    boxShadow: "0 16px 45px rgba(15,23,42,0.12)"
   },
-  categoryNameRow: {
+
+  priorityTitle: {
+    margin: 0,
+    fontSize: 28,
+    letterSpacing: "-0.04em"
+  },
+
+  priorityText: {
+    margin: "10px 0 0",
+    color: "#cbd5e1",
+    lineHeight: 1.7,
+    maxWidth: 760
+  },
+
+  priorityCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: "50%",
+    background: "#dcfce7",
+    color: "#166534",
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 6
-  },
-  categoryStats: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    flexWrap: "wrap"
-  },
-  categoryStat: {
-    fontSize: 14,
-    color: "#6b7280"
-  },
-  categoryStatDivider: {
-    color: "#d1d5db",
-    fontSize: 14
-  },
-  categoryName: {
-    fontSize: 13,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 0.5
-  },
-  categoryCount: {
-    fontSize: 12,
-    color: "#9ca3af"
-  },
-  compareRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8
-  },
-  compareLabel: {
-    fontSize: 11,
-    color: "#9ca3af",
-    minWidth: 34,
-    textAlign: "right"
-  },
-  compareTrack: {
-    flex: 1,
-    height: 6,
-    background: "#e5e7eb",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  compareFill: {
-    height: "100%",
-    borderRadius: 999,
-    transition: "width 0.5s ease"
-  },
-  compareValue: {
-    fontSize: 12,
-    fontWeight: 700,
-    minWidth: 36,
-    textAlign: "right"
-  },
-  categoryRight: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 4,
-    minWidth: 70
-  },
-  gapBadge: {
-    fontSize: 12,
-    fontWeight: 700,
-    padding: "4px 10px",
-    borderRadius: 6,
-    textAlign: "center",
-    whiteSpace: "nowrap"
-  },
-  skillsExpanded: {
-    padding: "0 18px 16px",
-    background: "#fafafa",
-    borderTop: "1px solid #f3f4f6"
-  },
-  legend: {
-    display: "flex",
-    gap: 16,
-    flexWrap: "wrap",
-    padding: "12px 0 10px",
-    fontSize: 12,
-    color: "#6b7280"
-  },
-  legendItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: 4
-  },
-  skillsList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6
-  },
-  skillRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "8px 12px",
-    borderRadius: 8,
-    border: "1px solid"
-  },
-  skillIcon: {
-    width: 18,
-    textAlign: "center",
-    fontSize: 14,
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: 22,
     flexShrink: 0
   },
-  skillRowName: {
-    fontSize: 14,
-    flex: 1
+
+  innerCard: {
+    background: "#f8fafc",
+    borderRadius: 16,
+    padding: 18,
+    border: "1px solid #e5e7eb"
   },
-  skillTags: {
-    display: "flex",
-    gap: 6,
-    flexShrink: 0
-  },
-  tagUser: {
-    fontSize: 10,
-    padding: "2px 7px",
-    borderRadius: 4,
-    background: "#e0f2fe",
-    color: "#0369a1",
-    fontWeight: 500
-  },
-  tagMarket: {
-    fontSize: 10,
-    padding: "2px 7px",
-    borderRadius: 4,
-    background: "#fef3c7",
-    color: "#92400e",
-    fontWeight: 500
-  },
-  insightBox: {
-    display: "flex",
-    gap: 10,
-    alignItems: "flex-start",
-    padding: "14px 16px",
-    background: "#f0fdf4",
-    border: "1px solid #bbf7d0",
-    borderRadius: 10,
-    marginTop: 16
-  },
-  insightIcon: {
-    fontSize: 18,
-    flexShrink: 0
-  },
-  insightText: {
-    fontSize: 14,
-    color: "#374151",
-    lineHeight: 1.6
-  },
-  placeholderBox: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    padding: "32px 20px",
-    gap: 10,
+
+  metricCard: {
     background: "#f9fafb",
     borderRadius: 12,
-    border: "1px dashed #d1d5db"
+    padding: "16px 18px",
+    border: "1px solid #e5e7eb",
+    overflow: "hidden"
   },
-  placeholderIcon: {
-    fontSize: 32
-  },
-  placeholderTitle: {
-    fontSize: 17,
-    fontWeight: 700,
-    color: "#374151"
-  },
-  placeholderText: {
-    fontSize: 13,
+
+  metricLabel: {
+    fontSize: 11,
+    fontWeight: 800,
     color: "#9ca3af",
+    textTransform: "uppercase",
+    letterSpacing: 1.2
+  },
+
+  metricValue: {
+    fontSize: 26,
+    fontWeight: 900,
+    color: "#111827",
+    marginTop: 8,
+    lineHeight: 1.15,
+    wordBreak: "break-word"
+  },
+
+  metricSub: {
+    fontSize: 12,
+    color: "#9ca3af",
+    marginTop: 6,
+    lineHeight: 1.45
+  },
+
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 16
+  },
+
+  dropdownHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    flexWrap: "wrap"
+  },
+
+  dropdownButton: {
+    border: "none",
+    borderRadius: 14,
+    padding: "11px 14px",
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+    background: "#111827",
+    color: "#ffffff",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8
+  },
+
+  dropdownArrow: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.14)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900
+  },
+
+  smallText: {
+    margin: "8px 0 0",
+    color: "#64748b",
+    fontSize: 13,
+    lineHeight: 1.6
+  },
+
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: 800,
+    color: "#9ca3af",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 8
+  },
+
+  sectionTitle: {
+    margin: 0,
+    color: "#111827",
+    fontSize: 18,
+    letterSpacing: "-0.02em"
+  },
+
+  mlIntro: {
+    marginTop: 18,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 14,
+    background: "#eef2ff",
+    color: "#3730a3",
+    lineHeight: 1.65,
+    fontSize: 14
+  },
+
+  mlSplitGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 12,
+    marginBottom: 16
+  },
+
+  mlBox: {
+    padding: 15,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    display: "flex",
+    flexDirection: "column",
+    gap: 6
+  },
+
+  mlExplanation: {
+    color: "#475569",
+    lineHeight: 1.65,
+    fontSize: 14
+  },
+
+  warningText: {
+    padding: 12,
+    borderRadius: 12,
+    background: "#fff7ed",
+    color: "#9a3412",
+    border: "1px solid #fed7aa"
+  },
+
+  modelTable: {
+    display: "grid",
+    gap: 8,
+    marginTop: 14
+  },
+
+  modelRow: {
+    display: "grid",
+    gridTemplateColumns: "1.3fr 1fr 1fr",
+    gap: 10,
+    alignItems: "center",
+    padding: "10px 12px",
+    borderRadius: 12,
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    fontSize: 12,
+    color: "#475569"
+  },
+
+  legendList: {
+    display: "grid",
+    gap: 8,
+    marginTop: 4
+  },
+
+  legendRow: {
+    display: "grid",
+    gridTemplateColumns: "14px 1fr auto",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 10px",
+    background: "#f8fafc",
+    borderRadius: 10
+  },
+
+  colorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: "50%"
+  },
+
+  legendName: {
+    fontSize: 13,
+    color: "#475569"
+  },
+
+  insightText: {
+    margin: "0 0 16px",
+    color: "#475569",
+    lineHeight: 1.7
+  },
+
+  gapList: {
+    display: "grid",
+    gap: 12
+  },
+
+  gapCard: {
+    padding: 14,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb"
+  },
+
+  gapTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 10
+  },
+
+  progressBar: {
+    height: 9,
+    borderRadius: 999,
+    background: "#e2e8f0",
+    overflow: "hidden",
+    marginBottom: 12
+  },
+
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(90deg, #378ADD, #1D9E75)"
+  },
+
+  skillChips: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6
+  },
+
+  chip: {
+    padding: "5px 8px",
+    borderRadius: 999,
+    background: "#eef2ff",
+    color: "#4338ca",
+    fontSize: 11,
+    fontWeight: 700
+  },
+
+  xaiIntro: {
+    margin: "0 0 14px",
+    color: "#64748b",
+    lineHeight: 1.65,
+    fontSize: 13
+  },
+
+  selectLabel: {
+    display: "grid",
+    gap: 8,
+    color: "#64748b",
+    fontSize: 13,
+    fontWeight: 700,
+    marginBottom: 14
+  },
+
+  select: {
+    width: "100%",
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    padding: "10px 12px",
+    background: "#ffffff",
+    color: "#111827",
+    fontSize: 14,
+    outline: "none"
+  },
+
+  xaiSummary: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    background: "#f8fafc",
+    marginBottom: 12
+  },
+
+  emptyState: {
+    minHeight: 120,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    color: "#94a3b8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     textAlign: "center",
-    lineHeight: 1.7,
-    maxWidth: 460
+    padding: 18,
+    fontSize: 13
   }
 };

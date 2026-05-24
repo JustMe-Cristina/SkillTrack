@@ -13,9 +13,7 @@ function normalizeText(text) {
 }
 
 function calculateMatchScore(requiredSkills, userSkillIds) {
-  if (!requiredSkills.length) {
-    return 0;
-  }
+  if (!requiredSkills.length) return 0;
 
   const matchedCount = requiredSkills.filter((skill) =>
     userSkillIds.has(Number(skill.id))
@@ -71,6 +69,7 @@ function buildMatchesAndGaps(requiredSkills, userSkills) {
     .map((skill) => ({
       skillId: Number(skill.id),
       skill: skill.name,
+      name: skill.name,
       category: skill.category
     }));
 
@@ -79,10 +78,25 @@ function buildMatchesAndGaps(requiredSkills, userSkills) {
     .map((skill) => ({
       skillId: Number(skill.id),
       skill: skill.name,
+      name: skill.name,
       category: skill.category
     }));
 
   return { matches, gaps };
+}
+
+function buildExplanation({ score, detectedSkills, matches, gaps }) {
+  if (detectedSkills.length === 0) {
+    return "Nu au fost detectate competențe relevante în descrierea jobului pe baza catalogului de competențe existent.";
+  }
+
+  if (gaps.length === 0) {
+    return `Scorul de potrivire este ${score}% deoarece ai toate cele ${detectedSkills.length} competențe detectate în descrierea jobului.`;
+  }
+
+  return `Scorul de potrivire este ${score}% deoarece ai ${matches.length} din cele ${detectedSkills.length} competențe detectate. Competențele lipsă principale sunt: ${gaps
+    .map((skill) => skill.skill)
+    .join(", ")}.`;
 }
 
 async function analyzeJobData({
@@ -107,7 +121,6 @@ async function analyzeJobData({
   ]);
 
   const detectedSkills = detectSkillsFromDescription(allSkills, cleanDescription);
-
   const { matches, gaps } = buildMatchesAndGaps(detectedSkills, userSkills);
 
   const userSkillIds = new Set(userSkills.map((skill) => Number(skill.skillId)));
@@ -119,6 +132,13 @@ async function analyzeJobData({
 
   const experience = detectExperienceRequirement(cleanDescription);
   const education = detectEducationRequirement(cleanDescription);
+
+  const explanation = buildExplanation({
+    score,
+    detectedSkills,
+    matches,
+    gaps
+  });
 
   return {
     ok: true,
@@ -136,6 +156,11 @@ async function analyzeJobData({
 
     description: cleanDescription,
     score,
+
+    matchedCount: matches.length,
+    requiredCount: detectedSkills.length,
+    gapCount: gaps.length,
+    explanation,
 
     detectedSkills: detectedSkills.map((skill) => ({
       skillId: Number(skill.id),

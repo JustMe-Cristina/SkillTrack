@@ -3,19 +3,32 @@ const jwt = require("jsonwebtoken");
 function auth(req, res, next) {
   const header = req.headers.authorization;
 
-  // De ce: tokenul se trimite standard ca "Bearer <token>"
   if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ ok: false, error: "Missing token" });
+    return res.status(401).json({
+      ok: false,
+      error: "Token lipsă"
+    });
   }
 
   const token = header.split(" ")[1];
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = payload; // { userId, email, iat, exp }
+    const payload = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
+    req.user = {
+      userId: payload.userId,
+      email: payload.email
+    };
+
     next();
   } catch (err) {
-    return res.status(401).json({ ok: false, error: "Invalid/expired token" });
+    return res.status(401).json({
+      ok: false,
+      error: "Token invalid sau expirat"
+    });
   }
 }
 

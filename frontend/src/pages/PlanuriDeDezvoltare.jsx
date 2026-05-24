@@ -1,1213 +1,1844 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "../services/api";
 import AppLayout from "../components/AppLayout";
+import { apiFetch } from "../services/api";
+import MesajFeedback from "../components/MesajFeedback";
+
+const STATUS_LABELS = {
+  NOT_STARTED: "Neînceput",
+  IN_PROGRESS: "În progres",
+  COMPLETED: "Finalizat",
+};
+
+const STEP_STATUS_OPTIONS = [
+  { value: "NOT_STARTED", label: "Neînceput" },
+  { value: "IN_PROGRESS", label: "În progres" },
+  { value: "COMPLETED", label: "Finalizat" },
+];
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  return new Date(value).toLocaleDateString("ro-RO", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function normalizeJobs(data) {
+  if (Array.isArray(data?.jobs)) return data.jobs;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+function normalizeRoadmaps(data) {
+  if (Array.isArray(data?.roadmaps)) return data.roadmaps;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+function normalizeUserSkills(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.skills)) return data.skills;
+  if (Array.isArray(data?.userSkills)) return data.userSkills;
+  return [];
+}
+
+function getUserSkillId(skill) {
+  return Number(skill.skillId ?? skill.skill_id ?? skill.id);
+}
+
+function getStepMeta(step) {
+  const title = String(step.title || "").toLowerCase();
+  const skillName = step.skill_name || "Skill general";
+
+  if (title.includes("înțelege") || title.includes("intelege")) {
+    return `${skillName} · Etapă conceptuală`;
+  }
+
+  if (title.includes("exersează") || title.includes("exerseaza")) {
+    return `${skillName} · Etapă practică`;
+  }
+
+  if (
+    title.includes("validează") ||
+    title.includes("valideaza") ||
+    title.includes("validare")
+  ) {
+    return `${skillName} · Validare competență`;
+  }
+
+  return `${skillName} · Etapă de dezvoltare`;
+}
+
+function isValidationStep(step) {
+  const title = String(step.title || "").toLowerCase();
+
+  return (
+    title.includes("validează") ||
+    title.includes("valideaza") ||
+    title.includes("validare")
+  );
+}
+
+function getVisibleSteps(roadmap, profileSkillIds) {
+  if (!roadmap?.steps?.length) return [];
+
+  return roadmap.steps.filter((step) => {
+    const isAddedToProfile =
+      step.skill_id && profileSkillIds.has(Number(step.skill_id));
+
+    return !(
+      step.status === "COMPLETED" &&
+      isValidationStep(step) &&
+      isAddedToProfile
+    );
+  });
+}
+
+function getNextStep(roadmap, profileSkillIds) {
+  const visibleSteps = getVisibleSteps(roadmap, profileSkillIds);
+
+  return (
+    visibleSteps.find((step) => step.status === "IN_PROGRESS") ||
+    visibleSteps.find((step) => step.status === "NOT_STARTED") ||
+    visibleSteps[0] ||
+    null
+  );
+}
+
+function getRoadmapStatusText(roadmap) {
+  if (!roadmap) return "-";
+
+  if (Number(roadmap.progress || 0) === 100 || roadmap.status === "COMPLETED") {
+    return "Finalizat";
+  }
+
+  if (Number(roadmap.progress || 0) > 0 || roadmap.status === "IN_PROGRESS") {
+    return "În progres";
+  }
+
+  return "Neînceput";
+}
+
+function getScoreTone(score) {
+  const value = Number(score || 0);
+
+  if (value >= 75) {
+    return {
+      background: "#dcfce7",
+      color: "#166534",
+      border: "1px solid #bbf7d0",
+    };
+  }
+
+  if (value >= 45) {
+    return {
+      background: "#fef3c7",
+      color: "#92400e",
+      border: "1px solid #fde68a",
+    };
+  }
+
+  return {
+    background: "#fee2e2",
+    color: "#991b1b",
+    border: "1px solid #fecaca",
+  };
+}
+
+function getPreviewStatusStyle(status) {
+  if (status === "Finalizat") return styles.previewStatusCompleted;
+  if (status === "În progres") return styles.previewStatusInProgress;
+  return styles.previewStatusNotStarted;
+}
 
 export default function PlanuriDeDezvoltare() {
-  const [roadmaps, setRoadmaps] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [roadmaps, setRoadmaps] = useState([]);
+
   const [selectedJobId, setSelectedJobId] = useState("");
-  const [expandedRoadmapId, setExpandedRoadmapId] = useState(null);
-  const [roadmapDetails, setRoadmapDetails] = useState({});
+  const [selectedRoadmapId, setSelectedRoadmapId] = useState("");
+  const [selectedRoadmap, setSelectedRoadmap] = useState(null);
+
+  const [showSavedJobs, setShowSavedJobs] = useState(false);
+  const [showRoadmapList, setShowRoadmapList] = useState(false);
+  const [showPlanSteps, setShowPlanSteps] = useState(false);
+
   const [loading, setLoading] = useState(true);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [generatingJobId, setGeneratingJobId] = useState(null);
+  const [updatingStepId, setUpdatingStepId] = useState(null);
+  const [deletingRoadmap, setDeletingRoadmap] = useState(false);
   const [message, setMessage] = useState("");
+
+  const [completionPopup, setCompletionPopup] = useState(false);
   const [completedSkillPrompt, setCompletedSkillPrompt] = useState(null);
+  const [addingSkillId, setAddingSkillId] = useState(null);
+  const [profileSkillIds, setProfileSkillIds] = useState(new Set());
 
   useEffect(() => {
-    fetchInitialData();
+    loadInitialData();
   }, []);
 
-  async function fetchInitialData() {
+  useEffect(() => {
+    if (selectedRoadmapId) {
+      loadRoadmapDetails(selectedRoadmapId);
+    } else {
+      setSelectedRoadmap(null);
+    }
+  }, [selectedRoadmapId]);
+
+  async function loadInitialData() {
     setLoading(true);
     setMessage("");
 
     try {
-      await Promise.all([fetchRoadmaps(), fetchJobs()]);
+      const [jobsData, roadmapsData, userSkillsData] = await Promise.all([
+        apiFetch("/api/jobs"),
+        apiFetch("/api/roadmaps"),
+        apiFetch("/api/user-skills"),
+      ]);
+
+      const normalizedJobs = normalizeJobs(jobsData);
+      const normalizedRoadmaps = normalizeRoadmaps(roadmapsData);
+      const normalizedUserSkills = normalizeUserSkills(userSkillsData);
+
+      setJobs(normalizedJobs);
+      setRoadmaps(normalizedRoadmaps);
+
+      setProfileSkillIds(
+        new Set(
+          normalizedUserSkills
+            .map((skill) => getUserSkillId(skill))
+            .filter((id) => Number.isFinite(id)),
+        ),
+      );
+
+      if (normalizedJobs.length > 0 && !selectedJobId) {
+        setSelectedJobId(String(normalizedJobs[0].id));
+      }
+
+      if (normalizedRoadmaps.length > 0 && !selectedRoadmapId) {
+        setSelectedRoadmapId(String(normalizedRoadmaps[0].id));
+      }
     } catch (err) {
-      console.error("LOAD ROADMAP DATA ERROR:", err);
-      setMessage(err.message || "Eroare la încărcarea datelor.");
+      console.error("LOAD ROADMAPS ERROR:", err);
+      setMessage(
+        err.message || "Nu s-au putut încărca planurile de dezvoltare.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function fetchRoadmaps() {
-    const data = await apiFetch("/api/roadmaps");
-    setRoadmaps(data.roadmaps || []);
-  }
-
-  async function fetchJobs() {
-    const data = await apiFetch("/api/jobs");
-    setJobs(data.jobs || []);
-  }
-
-  async function generateRoadmap() {
-    if (!selectedJobId) {
-      setMessage("Selectează un job.");
-      return;
-    }
-
-    try {
-      setMessage("");
-
-      const data = await apiFetch(`/api/roadmaps/generate/${selectedJobId}`, {
-        method: "POST",
-      });
-
-      setMessage(data.message || "Roadmap generat cu succes.");
-      await fetchRoadmaps();
-    } catch (err) {
-      console.error("GENERATE ROADMAP ERROR:", err);
-      setMessage(err.message || "Nu s-a putut genera roadmap-ul.");
-    }
-  }
-
-  async function toggleRoadmapDetails(roadmapId) {
-    if (expandedRoadmapId === roadmapId) {
-      setExpandedRoadmapId(null);
-      return;
-    }
-
-    setExpandedRoadmapId(roadmapId);
-
-    if (roadmapDetails[roadmapId]) return;
+  async function loadRoadmapDetails(roadmapId) {
+    setLoadingDetails(true);
+    setMessage("");
 
     try {
       const data = await apiFetch(`/api/roadmaps/${roadmapId}`);
-
-      setRoadmapDetails((prev) => ({
-        ...prev,
-        [roadmapId]: {
-          roadmap: data.roadmap,
-          steps: data.steps || [],
-          skill_groups: data.skill_groups || [],
-        },
-      }));
+      setSelectedRoadmap(data.roadmap || null);
     } catch (err) {
-      console.error("GET ROADMAP DETAILS ERROR:", err);
+      console.error("LOAD ROADMAP DETAILS ERROR:", err);
       setMessage(
         err.message || "Nu s-au putut încărca detaliile roadmap-ului.",
       );
+    } finally {
+      setLoadingDetails(false);
     }
   }
 
-  async function updateStepStatus(roadmapId, stepId, status) {
+  async function handleGenerateRoadmap(jobIdOverride = null) {
+    const jobIdToUse = jobIdOverride || selectedJobId;
+
+    if (!jobIdToUse) {
+      setMessage("Alege un job pentru care să generezi learning plan.");
+      return;
+    }
+
+    setGeneratingJobId(jobIdToUse);
+    setMessage("");
+
     try {
+      const data = await apiFetch(`/api/roadmaps/generate/${jobIdToUse}`, {
+        method: "POST",
+      });
+
+      await loadInitialData();
+
+      const newRoadmapId = data.roadmapId || data.id;
+
+      if (newRoadmapId) {
+        setSelectedRoadmapId(String(newRoadmapId));
+        setShowPlanSteps(true);
+      }
+
+      setShowSavedJobs(false);
+      setShowRoadmapList(false);
+      setMessage("Learning plan generat cu succes.");
+    } catch (err) {
+      console.error("GENERATE ROADMAP ERROR:", err);
+
+      if (err.message?.includes("Există deja")) {
+        setMessage(
+          "Există deja un learning plan pentru acest job. Deschide lista de roadmap-uri și selectează-l.",
+        );
+        setShowRoadmapList(true);
+      } else {
+        setMessage(err.message || "Nu s-a putut genera learning plan-ul.");
+      }
+    } finally {
+      setGeneratingJobId(null);
+    }
+  }
+
+  async function handleStepStatusChange(stepId, status) {
+    setUpdatingStepId(stepId);
+    setMessage("");
+
+    try {
+      const completedStep = selectedRoadmap?.steps?.find(
+        (step) => step.id === stepId,
+      );
+
       const data = await apiFetch(`/api/roadmaps/steps/${stepId}`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
 
-      setMessage(data.message || "Pas actualizat cu succes.");
+      setSelectedRoadmap((prev) => {
+        if (!prev) return prev;
 
-      if (data.skillCompleted && data.completedSkill) {
-        setCompletedSkillPrompt(data.completedSkill);
+        const updatedSteps = prev.steps.map((step) =>
+          step.id === stepId ? { ...step, status } : step,
+        );
+
+        return {
+          ...prev,
+          steps: updatedSteps,
+          progress: data.progress,
+          status: data.roadmapStatus,
+        };
+      });
+
+      setRoadmaps((prev) =>
+        prev.map((roadmap) =>
+          roadmap.id === data.roadmapId
+            ? {
+                ...roadmap,
+                progress: data.progress,
+                status: data.roadmapStatus,
+              }
+            : roadmap,
+        ),
+      );
+
+      if (status === "COMPLETED") {
+        if (completedStep?.skill_id && isValidationStep(completedStep)) {
+          setCompletedSkillPrompt(completedStep);
+        }
+
+        if (data.progress === 100) {
+          setCompletionPopup(true);
+        }
       }
-
-      const detailsData = await apiFetch(`/api/roadmaps/${roadmapId}`);
-
-      setRoadmapDetails((prev) => ({
-        ...prev,
-        [roadmapId]: {
-          roadmap: detailsData.roadmap,
-          steps: detailsData.steps || [],
-          skill_groups: detailsData.skill_groups || [],
-        },
-      }));
-
-      await fetchRoadmaps();
     } catch (err) {
-      console.error("UPDATE STEP STATUS ERROR:", err);
+      console.error("UPDATE STEP ERROR:", err);
       setMessage(err.message || "Nu s-a putut actualiza pasul.");
+    } finally {
+      setUpdatingStepId(null);
     }
   }
 
-  async function deleteRoadmap(roadmapId) {
-    if (
-      !window.confirm(
-        "Sigur vrei să ștergi acest roadmap? Acțiunea nu poate fi anulată.",
-      )
-    ) {
+  async function handleAddCompletedSkillToProfile(step) {
+    if (!step?.skill_id) {
+      setCompletedSkillPrompt(null);
       return;
     }
 
-    try {
-      await apiFetch(`/api/roadmaps/${roadmapId}`, {
-        method: "DELETE",
-      });
-
-      setMessage("Roadmap șters.");
-
-      setRoadmapDetails((prev) => {
-        const next = { ...prev };
-        delete next[roadmapId];
-        return next;
-      });
-
-      if (expandedRoadmapId === roadmapId) {
-        setExpandedRoadmapId(null);
-      }
-
-      await fetchRoadmaps();
-    } catch (err) {
-      console.error("DELETE ROADMAP ERROR:", err);
-      setMessage(err.message || "Nu s-a putut șterge roadmap-ul.");
-    }
-  }
-
-  async function addCompletedSkillToProfile() {
-    if (!completedSkillPrompt) return;
+    setAddingSkillId(step.skill_id);
+    setMessage("");
 
     try {
-      const data = await apiFetch("/api/user-skills", {
+      await apiFetch("/api/user-skills", {
         method: "POST",
         body: JSON.stringify({
-          skillId: Number(completedSkillPrompt.skillId),
-          level: 2,
-          confidence: 3,
+          skill_id: step.skill_id,
+          skillId: step.skill_id,
+          level: 1,
         }),
       });
 
+      setProfileSkillIds((prev) => {
+        const next = new Set(prev);
+        next.add(Number(step.skill_id));
+        return next;
+      });
+
       setMessage(
-        data?.message ||
-          `Competența ${completedSkillPrompt.skillName} a fost adăugată la profilul tău.`,
+        `Skillul ${
+          step.skill_name || step.title
+        } a fost adăugat în profilul tău la nivel fundamental.`,
       );
+
       setCompletedSkillPrompt(null);
-      await fetchRoadmaps();
     } catch (err) {
       console.error("ADD COMPLETED SKILL ERROR:", err);
 
       if (
-        err.message === "Skill already added" ||
-        err.message === "Skill already exists"
+        err.message?.toLowerCase().includes("duplicate") ||
+        err.message?.toLowerCase().includes("exist")
       ) {
-        setMessage(
-          `${completedSkillPrompt.skillName} era deja în profilul tău.`,
-        );
+        setProfileSkillIds((prev) => {
+          const next = new Set(prev);
+          next.add(Number(step.skill_id));
+          return next;
+        });
+
+        setCompletedSkillPrompt(null);
+        setMessage("Skillul există deja în profilul tău.");
       } else {
-        setMessage(err.message || "Nu s-a putut adăuga skillul la profil.");
+        setMessage(err.message || "Nu s-a putut adăuga skillul în profil.");
       }
-
-      setCompletedSkillPrompt(null);
+    } finally {
+      setAddingSkillId(null);
     }
   }
 
-  function renderRequirementStatus(value) {
-    if (value === true || value === 1) {
-      return <span style={styles.requirementOk}>✓</span>;
-    }
+  async function handleDeleteRoadmap() {
+    if (!selectedRoadmap) return;
 
-    if (value === false || value === 0) {
-      return <span style={styles.requirementMissing}>!</span>;
-    }
+    const confirmed = window.confirm(
+      "Sigur vrei să ștergi acest plan de dezvoltare?",
+    );
 
-    return null;
+    if (!confirmed) return;
+
+    setDeletingRoadmap(true);
+    setMessage("");
+
+    try {
+      await apiFetch(`/api/roadmaps/${selectedRoadmap.id}`, {
+        method: "DELETE",
+      });
+
+      setSelectedRoadmap(null);
+      setSelectedRoadmapId("");
+      setShowPlanSteps(false);
+
+      await loadInitialData();
+
+      setMessage("Roadmap șters.");
+    } catch (err) {
+      console.error("DELETE ROADMAP ERROR:", err);
+      setMessage(err.message || "Nu s-a putut șterge roadmap-ul.");
+    } finally {
+      setDeletingRoadmap(false);
+    }
   }
 
-  function renderSkillStatusDot(status) {
-    if (status === "COMPLETED") {
-      return <span style={styles.skillDotCompleted} />;
-    }
+  const selectedJob = useMemo(() => {
+    return jobs.find((job) => String(job.id) === String(selectedJobId));
+  }, [jobs, selectedJobId]);
 
-    if (status === "IN_PROGRESS") {
-      return <span style={styles.skillDotInProgress} />;
-    }
+  const completedSteps = useMemo(() => {
+    if (!selectedRoadmap?.steps?.length) return 0;
 
-    return <span style={styles.skillDotNotStarted} />;
-  }
+    return selectedRoadmap.steps.filter((step) => step.status === "COMPLETED")
+      .length;
+  }, [selectedRoadmap]);
 
-  function getStepButtonStyle(currentStatus, buttonStatus) {
-    const isActive = currentStatus === buttonStatus;
+  const validatedSkills = useMemo(() => {
+    if (!selectedRoadmap?.steps?.length) return [];
 
-    if (buttonStatus === "NOT_STARTED") {
-      return {
-        ...styles.stepBtn,
-        background: isActive ? "#111827" : "white",
-        color: isActive ? "white" : "#111827",
-        border: isActive ? "none" : "1px solid #d1d5db",
-      };
-    }
+    const unique = new Map();
 
-    if (buttonStatus === "IN_PROGRESS") {
-      return {
-        ...styles.stepBtn,
-        background: isActive ? "#1d4ed8" : "white",
-        color: isActive ? "white" : "#111827",
-        border: isActive ? "none" : "1px solid #d1d5db",
-      };
-    }
+    selectedRoadmap.steps.forEach((step) => {
+      const isAddedToProfile =
+        step.skill_id && profileSkillIds.has(Number(step.skill_id));
 
-    return {
-      ...styles.stepBtn,
-      background: isActive ? "#15803d" : "white",
-      color: isActive ? "white" : "#111827",
-      border: isActive ? "none" : "1px solid #d1d5db",
-    };
-  }
+      if (
+        step.status === "COMPLETED" &&
+        isValidationStep(step) &&
+        isAddedToProfile
+      ) {
+        unique.set(Number(step.skill_id), {
+          id: Number(step.skill_id),
+          name: step.skill_name || step.title,
+        });
+      }
+    });
+
+    return Array.from(unique.values());
+  }, [selectedRoadmap, profileSkillIds]);
+
+  const visibleSteps = useMemo(() => {
+    return getVisibleSteps(selectedRoadmap, profileSkillIds);
+  }, [selectedRoadmap, profileSkillIds]);
+
+  const nextStep = useMemo(() => {
+    return getNextStep(selectedRoadmap, profileSkillIds);
+  }, [selectedRoadmap, profileSkillIds]);
+
+  const activeRoadmaps = useMemo(() => {
+    return roadmaps.filter(
+      (roadmap) =>
+        roadmap.status !== "COMPLETED" && Number(roadmap.progress || 0) < 100,
+    ).length;
+  }, [roadmaps]);
+
+  const completedRoadmaps = useMemo(() => {
+    return roadmaps.filter(
+      (roadmap) =>
+        roadmap.status === "COMPLETED" || Number(roadmap.progress || 0) === 100,
+    ).length;
+  }, [roadmaps]);
 
   return (
     <AppLayout
       title="Planuri de dezvoltare"
-      subtitle="Generează și urmărește roadmap-urile pentru joburile tale"
+      subtitle="Transformă skillurile lipsă în pași clari de învățare."
     >
-      {message && <div style={styles.message}>{message}</div>}
-
-      <div style={styles.card}>
-        <h2 style={styles.sectionTitle}>Generează roadmap</h2>
-
-        <div style={styles.generateRow}>
-          <select
-            value={selectedJobId}
-            onChange={(e) => setSelectedJobId(e.target.value)}
-            style={styles.select}
-          >
-            <option value="">Selectează job</option>
-
-            {jobs.map((job) => (
-              <option key={job.id} value={job.id}>
-                {job.title} {job.company ? `(${job.company})` : ""}
-              </option>
-            ))}
-          </select>
-
-          <button onClick={generateRoadmap} style={styles.primaryButton}>
-            Generează
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div style={styles.card}>Se încarcă roadmap-urile...</div>
-      ) : roadmaps.length === 0 ? (
-        <div style={styles.card}>
-          <div style={styles.emptyTitle}>
-            Nu există încă roadmap-uri generate.
+      <div style={styles.page}>
+        {message && (
+          <MesajFeedback
+            message={message}
+            type={
+              message.toLowerCase().includes("nu s-a") ||
+              message.toLowerCase().includes("eroare") ||
+              message.toLowerCase().includes("există deja")
+                ? "error"
+                : "success"
+            }
+          />
+        )}
+        {loading ? (
+          <div style={styles.card}>
+            <div style={styles.muted}>Se încarcă planurile...</div>
           </div>
-          <div style={styles.emptyText}>
-            Selectează un job și generează primul tău plan de dezvoltare.
-          </div>
-        </div>
-      ) : (
-        <div style={styles.roadmapList}>
-          {roadmaps.map((roadmap) => {
-            const details = roadmapDetails[roadmap.id];
-            const isExpanded = expandedRoadmapId === roadmap.id;
+        ) : (
+          <>
+            <section style={styles.heroCard}>
+              <div style={styles.heroContent}>
+                <div style={styles.eyebrow}>SkillTrack Roadmaps</div>
 
-            return (
-              <div key={roadmap.id} style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <div style={{ flex: 1 }}>
-                    <h3 style={styles.cardTitle}>{roadmap.title}</h3>
-                    <p style={styles.cardDescription}>
-                      {roadmap.description || "Fără descriere disponibilă."}
-                    </p>
-                  </div>
+                <h2 style={styles.heroTitle}>
+                  Transformă joburile salvate în learning plan-uri clare.
+                </h2>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                    }}
-                  >
-                    <span style={getStatusBadgeStyle(roadmap.status)}>
-                      {formatStatus(roadmap.status)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => deleteRoadmap(roadmap.id)}
-                      style={styles.deleteBtn}
-                      title="Șterge roadmap"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                <p style={styles.heroText}>
+                  Alege un job salvat, generează un plan de dezvoltare și
+                  urmărește progresul pas cu pas. Fiecare etapă te ajută să
+                  acoperi skillurile lipsă într-un mod organizat.
+                </p>
+              </div>
+
+              <div style={styles.heroStatsPanel}>
+                <div style={styles.mainRoadmapStat}>
+                  <span>Learning plan-uri</span>
+                  <strong>{roadmaps.length}</strong>
                 </div>
 
-                <div style={styles.metaGrid}>
-                  <div style={styles.metaCard}>
-                    <div style={styles.metaLabel}>Job</div>
-                    <div style={styles.metaValue}>
-                      {roadmap.job_title || "-"}
-                    </div>
-                  </div>
+                <div style={styles.smallRoadmapStats}>
+                  <MiniStat value={activeRoadmaps} label="Active" />
+                  <MiniStat value={completedRoadmaps} label="Finalizate" />
+                </div>
+              </div>
+            </section>
 
-                  <div style={styles.metaCard}>
-                    <div style={styles.metaLabel}>Companie</div>
-                    <div style={styles.metaValue}>{roadmap.company || "-"}</div>
-                  </div>
+            <section style={styles.activeRoadmapCard}>
+              <div style={styles.activeTop}>
+                <div>
+                  <div style={styles.sectionLabel}>Roadmap activ</div>
 
-                  <div style={styles.metaCard}>
-                    <div style={styles.metaLabel}>Progres</div>
-                    <div style={styles.metaValue}>{roadmap.progress || 0}%</div>
-                  </div>
+                  <h2 style={styles.activeTitle}>
+                    {selectedRoadmap?.title || "Niciun roadmap selectat"}
+                  </h2>
+
+                  <p style={styles.activeSubtitle}>
+                    {selectedRoadmap
+                      ? selectedRoadmap.description ||
+                        "Plan generat pe baza skillurilor lipsă."
+                      : "Alege un job salvat sau selectează un roadmap existent."}
+                  </p>
                 </div>
 
-                {(roadmap.experience_label || roadmap.degree_label) && (
-                  <div style={styles.requirementsSummary}>
-                    <div style={styles.requirementsTitle}>
-                      Eligibilitate față de cerințele jobului
-                    </div>
-
-                    <div style={styles.requirementsGrid}>
-                      {roadmap.experience_label && (
-                        <div style={styles.requirementCard}>
-                          <div style={styles.requirementLabel}>Experiență</div>
-                          <div style={styles.requirementValueRow}>
-                            <span>{roadmap.experience_label}</span>
-                            {renderRequirementStatus(
-                              roadmap.meets_experience_requirement,
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {roadmap.degree_label && (
-                        <div style={styles.requirementCard}>
-                          <div style={styles.requirementLabel}>Studii</div>
-                          <div style={styles.requirementValueRow}>
-                            <span>{roadmap.degree_label}</span>
-                            {renderRequirementStatus(
-                              roadmap.meets_degree_requirement,
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {Array.isArray(roadmap.skill_preview) &&
-                  roadmap.skill_preview.length > 0 && (
-                    <div style={styles.skillPreviewSection}>
-                      <div style={styles.skillPreviewTitle}>
-                        Skilluri de dezvoltat
-                      </div>
-
-                      <div style={styles.skillPreviewTags}>
-                        {roadmap.skill_preview.map((skill, index) => (
-                          <span
-                            key={`${roadmap.id}-${skill.skill_name}-${index}`}
-                            style={
-                              skill.is_completed
-                                ? styles.skillPreviewTagCompleted
-                                : skill.status === "IN_PROGRESS"
-                                  ? styles.skillPreviewTagActive
-                                  : styles.skillPreviewTag
-                            }
-                          >
-                            {skill.skill_name}
-                          </span>
-                        ))}
-                      </div>
-
-                      {roadmap.next_skill?.skill_name && (
-                        <div style={styles.nextSkillBox}>
-                          <span style={styles.nextSkillLabel}>
-                            Următorul skill recomandat:
-                          </span>{" "}
-                          <span style={styles.nextSkillValue}>
-                            {roadmap.next_skill.skill_name}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                {isExpanded &&
-                  details?.skill_groups?.some(
-                    (group) => group.status === "COMPLETED",
-                  ) && (
-                    <SkillProgressAxis skillGroups={details.skill_groups} />
-                  )}
-
-                <div style={styles.progressBar}>
-                  <div
-                    style={{
-                      ...styles.progressFill,
-                      width: `${roadmap.progress || 0}%`,
-                    }}
-                  />
-                </div>
-
-                <div style={styles.actionsRow}>
-                  <button
-                    type="button"
-                    style={styles.secondaryButton}
-                    onClick={() => toggleRoadmapDetails(roadmap.id)}
-                  >
-                    {isExpanded ? "Ascunde pașii" : "Vezi pașii"}
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <div style={styles.stepsSection}>
-                    {!details ? (
-                      <div style={styles.loadingSteps}>Se încarcă pașii...</div>
-                    ) : details.skill_groups?.length === 0 ? (
-                      <div style={styles.emptyText}>
-                        Nu există pași pentru acest roadmap.
-                      </div>
-                    ) : (
-                      <>
-                        {details.roadmap?.next_skill?.skill_name && (
-                          <div style={styles.currentFocusBox}>
-                            <div style={styles.currentFocusLabel}>
-                              Focus curent
-                            </div>
-                            <div style={styles.currentFocusValue}>
-                              {details.roadmap.next_skill.skill_name}
-                            </div>
-                            <div style={styles.currentFocusHint}>
-                              Acesta este următorul skill recomandat pe baza
-                              ordonării din piață și a progresului tău.
-                            </div>
-                          </div>
-                        )}
-
-                        <div style={styles.skillGroupsList}>
-                          {details.skill_groups.map((group, groupIndex) => (
-                            <div
-                              key={`${group.skill_name}-${groupIndex}`}
-                              style={styles.skillGroupCard}
-                            >
-                              <div style={styles.skillGroupHeader}>
-                                <div>
-                                  <div style={styles.skillGroupTitleRow}>
-                                    {renderSkillStatusDot(group.status)}
-                                    <h4 style={styles.skillGroupTitle}>
-                                      {group.skill_name}
-                                    </h4>
-                                  </div>
-                                  <div style={styles.skillGroupSubtext}>
-                                    Frecvență în joburile tale:{" "}
-                                    {group.frequency || 0}
-                                  </div>
-                                </div>
-
-                                <span style={getStatusBadgeStyle(group.status)}>
-                                  {formatStatus(group.status)}
-                                </span>
-                              </div>
-
-                              <div style={styles.groupStepsList}>
-                                {group.steps.map((step) => (
-                                  <div key={step.id} style={styles.stepCard}>
-                                    <div style={styles.stepTop}>
-                                      <div>
-                                        <div style={styles.stepOrder}>
-                                          Pasul {step.step_order}
-                                        </div>
-                                        <h4 style={styles.stepTitle}>
-                                          {step.title}
-                                        </h4>
-                                        <p style={styles.stepDescription}>
-                                          {step.description}
-                                        </p>
-                                      </div>
-
-                                      <span
-                                        style={getStatusBadgeStyle(step.status)}
-                                      >
-                                        {formatStatus(step.status)}
-                                      </span>
-                                    </div>
-
-                                    <div style={styles.stepMeta}>
-                                      <span>
-                                        <strong>Skill:</strong>{" "}
-                                        {step.skill_name || "-"}
-                                      </span>
-                                    </div>
-
-                                    <div style={styles.stepActions}>
-                                      <button
-                                        type="button"
-                                        style={getStepButtonStyle(
-                                          step.status,
-                                          "NOT_STARTED",
-                                        )}
-                                        onClick={() =>
-                                          updateStepStatus(
-                                            roadmap.id,
-                                            step.id,
-                                            "NOT_STARTED",
-                                          )
-                                        }
-                                      >
-                                        Neînceput
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        style={getStepButtonStyle(
-                                          step.status,
-                                          "IN_PROGRESS",
-                                        )}
-                                        onClick={() =>
-                                          updateStepStatus(
-                                            roadmap.id,
-                                            step.id,
-                                            "IN_PROGRESS",
-                                          )
-                                        }
-                                      >
-                                        În progres
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        style={getStepButtonStyle(
-                                          step.status,
-                                          "COMPLETED",
-                                        )}
-                                        onClick={() =>
-                                          updateStepStatus(
-                                            roadmap.id,
-                                            step.id,
-                                            "COMPLETED",
-                                          )
-                                        }
-                                      >
-                                        Finalizat
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                {selectedRoadmap && (
+                  <div style={styles.progressCircle}>
+                    <strong>{selectedRoadmap.progress || 0}%</strong>
+                    <span>{getRoadmapStatusText(selectedRoadmap)}</span>
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
-      )}
 
-      {completedSkillPrompt && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Skill finalizat 🎉</h3>
-            <p style={styles.modalText}>
-              Ai completat toți pașii pentru{" "}
-              <strong>{completedSkillPrompt.skillName}</strong>.
-            </p>
-            <p style={styles.modalText}>
-              Dacă skillul e deja în profilul tău, nivelul a fost actualizat
-              automat la <strong>Independent</strong>. Dacă nu e în profil, vrei
-              să îl adaugi?
-            </p>
+              {selectedRoadmap ? (
+                <>
+                  <div style={styles.progressBarLarge}>
+                    <div
+                      style={{
+                        ...styles.progressFill,
+                        width: `${selectedRoadmap.progress || 0}%`,
+                      }}
+                    />
+                  </div>
 
-            <div style={styles.modalActions}>
-              <button
-                type="button"
-                style={styles.primaryButton}
-                onClick={addCompletedSkillToProfile}
-              >
-                Da, adaugă skillul
-              </button>
+                  <div style={styles.activeMetaGrid}>
+                    <InfoBox
+                      label="Pași finalizați"
+                      value={`${completedSteps}/${
+                        selectedRoadmap.steps?.length || 0
+                      }`}
+                    />
 
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={() => setCompletedSkillPrompt(null)}
-              >
-                Mai târziu
-              </button>
+                    <InfoBox
+                      label="Următorul pas"
+                      value={nextStep?.title || "Toți pașii sunt finalizați"}
+                    />
+
+                    <InfoBox
+                      label="Categorie ML job"
+                      value={selectedRoadmap.ml_predicted_category || "N/A"}
+                    />
+                  </div>
+
+                  <div style={styles.activeActions}>
+                    <button
+                      type="button"
+                      style={styles.primaryButton}
+                      onClick={() => {
+                        setShowPlanSteps(true);
+
+                        setTimeout(() => {
+                          const el = document.getElementById("roadmap-steps");
+                          el?.scrollIntoView({ behavior: "smooth" });
+                        }, 50);
+                      }}
+                    >
+                      Continuă learning plan
+                    </button>
+
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={() => setShowRoadmapList((prev) => !prev)}
+                    >
+                      {showRoadmapList
+                        ? "Ascunde roadmap-urile"
+                        : "Schimbă roadmap"}
+                    </button>
+
+                    <button
+                      type="button"
+                      style={styles.dangerButton}
+                      onClick={handleDeleteRoadmap}
+                      disabled={deletingRoadmap}
+                    >
+                      {deletingRoadmap ? "Se șterge..." : "Șterge"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <EmptyState message="Nu ai selectat încă un roadmap." />
+              )}
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.dropdownHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Alege job salvat</div>
+
+                  <h2 style={styles.sectionTitle}>
+                    Generează un learning plan
+                  </h2>
+
+                  <p style={styles.smallText}>
+                    Deschide joburile salvate și alege pentru care vrei să
+                    creezi un plan de dezvoltare.
+                  </p>
+                </div>
+
+                <div style={styles.dropdownActions}>
+                  <span style={styles.countPill}>
+                    {jobs.length} {jobs.length === 1 ? "job" : "joburi"}
+                  </span>
+
+                  <button
+                    type="button"
+                    style={styles.dropdownButton}
+                    onClick={() => setShowSavedJobs((prev) => !prev)}
+                  >
+                    {showSavedJobs ? "Închide joburile" : "Deschide joburile"}
+                    <span style={styles.dropdownArrow}>
+                      {showSavedJobs ? "↑" : "↓"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {showSavedJobs && (
+                <>
+                  {jobs.length > 0 ? (
+                    <div style={styles.savedJobsGrid}>
+                      {jobs.map((job) => {
+                        const isSelected =
+                          String(selectedJobId) === String(job.id);
+
+                        const scoreTone = getScoreTone(job.match_score);
+
+                        return (
+                          <article
+                            key={job.id}
+                            style={{
+                              ...styles.savedJobCard,
+                              ...(isSelected ? styles.savedJobCardActive : {}),
+                            }}
+                            onClick={() => setSelectedJobId(String(job.id))}
+                          >
+                            <div style={styles.savedJobTop}>
+                              <div style={styles.savedJobTitleWrap}>
+                                <strong>{job.title}</strong>
+
+                                <span>
+                                  {job.company || "Companie necunoscută"} ·{" "}
+                                  {job.location || "Locație nespecificată"}
+                                </span>
+                              </div>
+
+                              <div
+                                style={{
+                                  ...styles.savedJobScore,
+                                  ...scoreTone,
+                                }}
+                              >
+                                {job.match_score ?? 0}%
+                              </div>
+                            </div>
+
+                            <div style={styles.savedJobMeta}>
+                              <span>{job.work_mode || "Mod nespecificat"}</span>
+                              <span>
+                                {job.employment_type || "Tip nespecificat"}
+                              </span>
+                              <span>
+                                ML: {job.ml_predicted_category || "N/A"}
+                              </span>
+                            </div>
+
+                            <div style={styles.savedJobFooter}>
+                              <span>
+                                {isSelected
+                                  ? "Job selectat pentru learning plan"
+                                  : "Selectează jobul sau generează direct"}
+                              </span>
+
+                              <button
+                                type="button"
+                                style={styles.smallGenerateButton}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedJobId(String(job.id));
+                                  handleGenerateRoadmap(job.id);
+                                }}
+                                disabled={generatingJobId === job.id}
+                              >
+                                {generatingJobId === job.id
+                                  ? "Se generează..."
+                                  : "Generează learning plan"}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyState message="Nu ai încă joburi salvate. Analizează și salvează un job înainte să generezi un learning plan." />
+                  )}
+                </>
+              )}
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.dropdownHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Roadmap-urile mele</div>
+
+                  <h2 style={styles.sectionTitle}>Preview planuri salvate</h2>
+
+                  <p style={styles.smallText}>
+                    Deschide lista ca să alegi rapid alt learning plan.
+                  </p>
+                </div>
+
+                <div style={styles.dropdownActions}>
+                  <span style={styles.countPill}>
+                    {roadmaps.length}{" "}
+                    {roadmaps.length === 1 ? "plan" : "planuri"}
+                  </span>
+
+                  <button
+                    type="button"
+                    style={styles.dropdownButton}
+                    onClick={() => setShowRoadmapList((prev) => !prev)}
+                  >
+                    {showRoadmapList ? "Închide lista" : "Deschide lista"}
+                    <span style={styles.dropdownArrow}>
+                      {showRoadmapList ? "↑" : "↓"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {showRoadmapList && (
+                <>
+                  {roadmaps.length > 0 ? (
+                    <div style={styles.roadmapList}>
+                      {roadmaps.map((roadmap) => {
+                        const isSelected =
+                          String(selectedRoadmapId) === String(roadmap.id);
+
+                        const previewStatus = getRoadmapStatusText(roadmap);
+
+                        return (
+                          <button
+                            key={roadmap.id}
+                            type="button"
+                            style={{
+                              ...styles.roadmapPreviewCard,
+                              ...(isSelected
+                                ? styles.roadmapPreviewCardActive
+                                : {}),
+                            }}
+                            onClick={() => {
+                              setSelectedRoadmapId(String(roadmap.id));
+                              setShowRoadmapList(false);
+                              setShowPlanSteps(false);
+                            }}
+                          >
+                            <div style={styles.roadmapPreviewHeader}>
+                              <div style={styles.roadmapPreviewTitleWrap}>
+                                <strong>{roadmap.title}</strong>
+
+                                <span>
+                                  {roadmap.job_company ||
+                                    "Companie necunoscută"}{" "}
+                                  · {formatDate(roadmap.created_at)}
+                                </span>
+                              </div>
+
+                              <div style={styles.roadmapPreviewProgress}>
+                                {roadmap.progress || 0}%
+                              </div>
+                            </div>
+
+                            <div style={styles.progressBar}>
+                              <div
+                                style={{
+                                  ...styles.progressFill,
+                                  width: `${roadmap.progress || 0}%`,
+                                }}
+                              />
+                            </div>
+
+                            <div style={styles.roadmapPreviewMeta}>
+                              <span
+                                style={{
+                                  ...styles.previewStatusPill,
+                                  ...getPreviewStatusStyle(previewStatus),
+                                }}
+                              >
+                                {previewStatus}
+                              </span>
+
+                              <span>
+                                {roadmap.completed_steps || 0}/
+                                {roadmap.total_steps || 0} pași
+                              </span>
+                            </div>
+
+                            {isSelected && (
+                              <div style={styles.selectedRoadmapHint}>
+                                Roadmap afișat acum
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyState message="Nu ai încă roadmap-uri. Alege un job și generează primul plan." />
+                  )}
+                </>
+              )}
+            </section>
+
+            <section id="roadmap-steps" style={styles.card}>
+              <div style={styles.dropdownHeader}>
+                <div>
+                  <div style={styles.sectionLabel}>Plan de dezvoltare</div>
+
+                  <h2 style={styles.sectionTitle}>
+                    {selectedRoadmap?.title || "Niciun roadmap selectat"}
+                  </h2>
+
+                  <p style={styles.smallText}>
+                    Deschide planul pentru a vedea pașii concreți și a actualiza
+                    progresul fiecărei etape.
+                  </p>
+                </div>
+
+                <div style={styles.dropdownActions}>
+                  <span style={styles.countPill}>
+                    {visibleSteps.length}{" "}
+                    {visibleSteps.length === 1
+                      ? "pas vizibil"
+                      : "pași vizibili"}
+                  </span>
+
+                  <button
+                    type="button"
+                    style={styles.dropdownButton}
+                    onClick={() => setShowPlanSteps((prev) => !prev)}
+                    disabled={!selectedRoadmap}
+                  >
+                    {showPlanSteps ? "Închide planul" : "Deschide planul"}
+                    <span style={styles.dropdownArrow}>
+                      {showPlanSteps ? "↑" : "↓"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {showPlanSteps && (
+                <>
+                  {validatedSkills.length > 0 && (
+                    <div style={styles.validatedSkillsBox}>
+                      <div style={styles.validatedSkillsHeader}>
+                        <span>Skilluri validate și adăugate în profil</span>
+                        <strong>{validatedSkills.length}</strong>
+                      </div>
+
+                      <div style={styles.validatedSkillsList}>
+                        {validatedSkills.map((skill) => (
+                          <span
+                            key={skill.id}
+                            style={styles.validatedSkillChip}
+                          >
+                            ✓ {skill.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {loadingDetails ? (
+                    <div style={styles.muted}>Se încarcă detaliile...</div>
+                  ) : visibleSteps.length > 0 ? (
+                    <div style={styles.stepsList}>
+                      {visibleSteps.map((step) => (
+                        <article key={step.id} style={styles.stepCard}>
+                          <div style={styles.stepNumber}>{step.step_order}</div>
+
+                          <div style={styles.stepContent}>
+                            <div style={styles.stepHeader}>
+                              <div>
+                                <h3 style={styles.stepTitle}>{step.title}</h3>
+
+                                <div style={styles.stepMeta}>
+                                  {getStepMeta(step)}
+                                </div>
+                              </div>
+
+                              <div style={styles.statusButtonGroup}>
+                                {STEP_STATUS_OPTIONS.map((option) => {
+                                  const isActive = step.status === option.value;
+
+                                  return (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      disabled={updatingStepId === step.id}
+                                      onClick={() =>
+                                        handleStepStatusChange(
+                                          step.id,
+                                          option.value,
+                                        )
+                                      }
+                                      style={{
+                                        ...styles.statusButton,
+                                        ...(option.value === "NOT_STARTED"
+                                          ? styles.statusButtonNotStarted
+                                          : {}),
+                                        ...(option.value === "IN_PROGRESS"
+                                          ? styles.statusButtonInProgress
+                                          : {}),
+                                        ...(option.value === "COMPLETED"
+                                          ? styles.statusButtonCompleted
+                                          : {}),
+                                        ...(isActive
+                                          ? styles.statusButtonActive
+                                          : {}),
+                                        ...(isActive &&
+                                        option.value === "NOT_STARTED"
+                                          ? styles.statusButtonActiveNotStarted
+                                          : {}),
+                                        ...(isActive &&
+                                        option.value === "IN_PROGRESS"
+                                          ? styles.statusButtonActiveInProgress
+                                          : {}),
+                                        ...(isActive &&
+                                        option.value === "COMPLETED"
+                                          ? styles.statusButtonActiveCompleted
+                                          : {}),
+                                        opacity:
+                                          updatingStepId === step.id ? 0.65 : 1,
+                                      }}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <p style={styles.stepDescription}>
+                              {step.description}
+                            </p>
+
+                            {step.status === "COMPLETED" &&
+                              step.skill_id &&
+                              isValidationStep(step) &&
+                              !profileSkillIds.has(Number(step.skill_id)) && (
+                                <button
+                                  type="button"
+                                  style={styles.smallAddButton}
+                                  onClick={() => setCompletedSkillPrompt(step)}
+                                >
+                                  Adaugă skill ca nivel fundamental
+                                </button>
+                              )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState message="Toate skillurile validate au fost adăugate în profil. Poți continua cu alt roadmap sau genera unul nou." />
+                  )}
+                </>
+              )}
+            </section>
+          </>
+        )}
+
+        {completedSkillPrompt && (
+          <div style={styles.overlay}>
+            <div style={styles.modal}>
+              <div style={styles.modalEmoji}>✨</div>
+
+              <h3 style={styles.modalTitle}>Skill validat</h3>
+
+              <p style={styles.modalText}>
+                Ai finalizat etapa de validare pentru{" "}
+                <strong>
+                  {completedSkillPrompt.skill_name ||
+                    completedSkillPrompt.title}
+                </strong>
+                . Vrei să adaugi acest skill în profilul tău la nivel
+                fundamental?
+              </p>
+
+              <div style={styles.modalActions}>
+                <button
+                  type="button"
+                  style={styles.primaryButton}
+                  onClick={() =>
+                    handleAddCompletedSkillToProfile(completedSkillPrompt)
+                  }
+                  disabled={addingSkillId === completedSkillPrompt.skill_id}
+                >
+                  {addingSkillId === completedSkillPrompt.skill_id
+                    ? "Se adaugă..."
+                    : "Adaugă ca nivel fundamental"}
+                </button>
+
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => setCompletedSkillPrompt(null)}
+                >
+                  Nu acum
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {completionPopup && (
+          <div style={styles.overlay}>
+            <div style={styles.modal}>
+              <div style={styles.modalEmoji}>🎉</div>
+
+              <h3 style={styles.modalTitle}>Felicitări!</h3>
+
+              <p style={styles.modalText}>
+                Ai finalizat 100% din acest plan de dezvoltare. Roadmap-ul este
+                marcat ca finalizat, iar progresul tău este salvat.
+              </p>
+
+              <div style={styles.modalActions}>
+                <button
+                  type="button"
+                  style={styles.primaryButton}
+                  onClick={() => setCompletionPopup(false)}
+                >
+                  Super!
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </AppLayout>
   );
 }
 
-function SkillProgressAxis({ skillGroups }) {
-  const allGroups = useMemo(() => skillGroups || [], [skillGroups]);
-
-  const completedGroups = useMemo(() => {
-    return [...allGroups]
-      .filter((group) => group.status === "COMPLETED")
-      .sort((a, b) => {
-        const aTime = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-        const bTime = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-        return aTime - bTime;
-      });
-  }, [allGroups]);
-
-  if (!completedGroups.length || !allGroups.length) return null;
-
-  const totalSlots = allGroups.length;
-
+function MiniStat({ value, label }) {
   return (
-    <div style={styles.skillAxisSection}>
-      <div style={styles.skillAxisTitle}>Progres competențe</div>
-
-      <div style={styles.skillAxisWrapper}>
-        <div style={styles.skillAxisLine} />
-
-        {Array.from({ length: totalSlots }).map((_, index) => {
-          const leftPercent = ((index + 0.5) / totalSlots) * 100;
-          const skillForSlot = completedGroups[index];
-
-          return (
-            <div
-              key={index}
-              style={{
-                ...styles.skillAxisPointAbsolute,
-                left: `${leftPercent}%`
-              }}
-            >
-              {skillForSlot ? (
-                <>
-                  <span style={styles.skillDotCompleted} />
-                  <div style={styles.skillAxisLabel}>
-                    {skillForSlot.skill_name}
-                  </div>
-                </>
-              ) : (
-                <span style={styles.skillDotPlaceholder} />
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div style={styles.miniStat}>
+      <strong>{value}</strong>
+      <span>{label}</span>
     </div>
   );
 }
-function formatStatus(status) {
-  if (status === "NOT_STARTED") return "Neînceput";
-  if (status === "IN_PROGRESS") return "În progres";
-  if (status === "COMPLETED") return "Finalizat";
-  return status || "-";
+
+function InfoBox({ label, value }) {
+  return (
+    <div style={styles.infoBox}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
 }
 
-function getStatusBadgeStyle(status) {
-  const base = {
-    padding: "8px 12px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 700,
-    whiteSpace: "nowrap",
-  };
-
-  if (status === "NOT_STARTED") {
-    return {
-      ...base,
-      background: "#f3f4f6",
-      color: "#374151",
-    };
-  }
-
-  if (status === "IN_PROGRESS") {
-    return {
-      ...base,
-      background: "#dbeafe",
-      color: "#1d4ed8",
-    };
-  }
-
-  if (status === "COMPLETED") {
-    return {
-      ...base,
-      background: "#dcfce7",
-      color: "#15803d",
-    };
-  }
-
-  return {
-    ...base,
-    background: "#e5e7eb",
-    color: "#111827",
-  };
+function EmptyState({ message }) {
+  return (
+    <div style={styles.emptyState}>
+      <span>{message}</span>
+    </div>
+  );
 }
 
 const styles = {
+  page: {
+    display: "grid",
+    gap: 16,
+    paddingBottom: 24,
+  },
+
   message: {
-    marginBottom: 16,
     padding: 12,
     borderRadius: 12,
     background: "#ffffff",
     color: "#374151",
     boxShadow: "0 10px 30px rgba(0,0,0,0.04)",
   },
+
+  muted: {
+    color: "#9ca3af",
+    fontSize: 14,
+  },
+
   card: {
-    background: "white",
-    borderRadius: 16,
+    background: "#ffffff",
+    borderRadius: 18,
+    padding: 20,
+    boxShadow: "0 10px 30px rgba(15,23,42,0.05)",
+    border: "1px solid #e5e7eb",
+  },
+
+  heroCard: {
+    display: "grid",
+    gridTemplateColumns: "1fr 320px",
+    gap: 22,
     padding: 24,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-    marginBottom: 20,
+    borderRadius: 24,
+    background:
+      "radial-gradient(circle at top left, #eef2ff 0, #ffffff 45%, #f8fafc 100%)",
+    border: "1px solid #dbeafe",
+    boxShadow: "0 18px 50px rgba(15,23,42,0.08)",
   },
-  sectionTitle: {
-    marginTop: 0,
-    marginBottom: 16,
-    color: "#111827",
-  },
-  generateRow: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  select: {
-    padding: 12,
-    borderRadius: 8,
-    border: "1px solid #d1d5db",
-    minWidth: 280,
-  },
-  roadmapList: {
+
+  heroContent: {
     display: "flex",
     flexDirection: "column",
-    gap: 20,
+    justifyContent: "center",
   },
-  cardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 16,
-    flexWrap: "wrap",
+
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: 900,
+    color: "#4f46e5",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+    marginBottom: 8,
   },
-  cardTitle: {
-    marginTop: 0,
-    marginBottom: 10,
-    color: "#111827",
-  },
-  cardDescription: {
+
+  heroTitle: {
     margin: 0,
-    color: "#4b5563",
-    lineHeight: 1.7,
-  },
-  metaGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 14,
-    marginTop: 20,
-  },
-  metaCard: {
-    background: "#f9fafb",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 14,
-  },
-  metaLabel: {
-    fontSize: 12,
-    color: "#6b7280",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  metaValue: {
-    marginTop: 8,
+    fontSize: 32,
+    lineHeight: 1.12,
     color: "#111827",
-    fontWeight: 700,
+    letterSpacing: "-0.045em",
+    maxWidth: 760,
   },
-  requirementsSummary: {
-    marginTop: 18,
-    padding: 16,
-    borderRadius: 12,
-    background: "#f9fafb",
-    border: "1px solid #e5e7eb",
+
+  heroText: {
+    margin: "12px 0 0",
+    color: "#64748b",
+    fontSize: 14,
+    lineHeight: 1.7,
+    maxWidth: 780,
   },
-  requirementsTitle: {
-    fontSize: 12,
-    color: "#6b7280",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 12,
-    fontWeight: 700,
-  },
-  requirementsGrid: {
+
+  heroStatsPanel: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
     gap: 12,
   },
-  requirementCard: {
-    background: "white",
-    border: "1px solid #e5e7eb",
-    borderRadius: 10,
-    padding: 12,
-  },
-  requirementLabel: {
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: "#6b7280",
-  },
-  requirementValueRow: {
-    marginTop: 8,
+
+  mainRoadmapStat: {
+    minHeight: 130,
+    borderRadius: 22,
+    background: "#111827",
+    color: "#ffffff",
+    padding: 20,
     display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    color: "#111827",
-    fontWeight: 600,
-  },
-  requirementOk: {
-    width: 22,
-    height: 22,
-    borderRadius: "999px",
-    background: "#dcfce7",
-    color: "#166534",
-    display: "flex",
-    alignItems: "center",
+    flexDirection: "column",
     justifyContent: "center",
-    fontWeight: 800,
-    flexShrink: 0,
   },
-  requirementMissing: {
-    width: 22,
-    height: 22,
-    borderRadius: "999px",
-    background: "#fee2e2",
-    color: "#991b1b",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-    flexShrink: 0,
+
+  smallRoadmapStats: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
   },
-  skillPreviewSection: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 12,
+
+  miniStat: {
+    borderRadius: 16,
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-  },
-  skillPreviewTitle: {
-    fontSize: 12,
-    color: "#6b7280",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 12,
-    fontWeight: 700,
-  },
-  skillPreviewTags: {
+    padding: 14,
     display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
+    flexDirection: "column",
+    gap: 5,
+    boxShadow: "0 8px 24px rgba(15,23,42,0.04)",
   },
-  skillPreviewTag: {
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: "#f3f4f6",
-    color: "#374151",
-    fontWeight: 600,
-    fontSize: 13,
+
+  activeRoadmapCard: {
+    background: "#ffffff",
+    borderRadius: 22,
+    padding: 22,
+    boxShadow: "0 14px 40px rgba(15,23,42,0.07)",
+    border: "1px solid #e0e7ff",
   },
-  skillPreviewTagActive: {
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: "#dbeafe",
-    color: "#1d4ed8",
-    fontWeight: 700,
-    fontSize: 13,
+
+  activeTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 20,
+    alignItems: "flex-start",
+    marginBottom: 16,
   },
-  skillPreviewTagCompleted: {
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: "#dcfce7",
-    color: "#166534",
-    fontWeight: 700,
-    fontSize: 13,
-  },
-  nextSkillBox: {
-    marginTop: 14,
-    padding: 12,
-    borderRadius: 10,
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
-  },
-  nextSkillLabel: {
-    color: "#1d4ed8",
-    fontSize: 13,
-    fontWeight: 700,
-  },
-  nextSkillValue: {
+
+  activeTitle: {
+    margin: 0,
     color: "#111827",
+    fontSize: 26,
+    letterSpacing: "-0.035em",
+  },
+
+  activeSubtitle: {
+    margin: "8px 0 0",
+    color: "#64748b",
     fontSize: 14,
-    fontWeight: 700,
+    lineHeight: 1.65,
+    maxWidth: 860,
   },
-  skillAxisSection: {
-  marginTop: 18,
-  padding: 16,
-  borderRadius: 12,
-  background: "#f9fafb",
-  border: "1px solid #e5e7eb"
-},
-skillAxisTitle: {
-  fontSize: 12,
-  color: "#6b7280",
-  textTransform: "uppercase",
-  letterSpacing: 1,
-  marginBottom: 14,
-  fontWeight: 700
-},
-skillAxisWrapper: {
-  position: "relative",
-  height: 64
-},
-skillAxisLine: {
-  position: "absolute",
-  top: 18,
-  left: 0,
-  right: 0,
-  height: 4,
-  borderRadius: 999,
-  background: "#d1d5db"
-},
-skillAxisPointAbsolute: {
-  position: "absolute",
-  top: 8,
-  transform: "translateX(-50%)",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  gap: 8,
-  minWidth: 70
-},
-skillDotCompleted: {
-  width: 18,
-  height: 18,
-  borderRadius: "999px",
-  background: "#16a34a",
-  border: "3px solid #dcfce7",
-  display: "inline-block",
-  zIndex: 2
-},
-skillDotPlaceholder: {
-  width: 18,
-  height: 18,
-  borderRadius: "999px",
-  background: "#e5e7eb",
-  opacity: 0.45,
-  display: "inline-block",
-  zIndex: 2
-},
-skillAxisLabel: {
-  textAlign: "center",
-  fontSize: 12,
-  color: "#374151",
-  fontWeight: 600,
-  lineHeight: 1.4,
-  maxWidth: 90
-},
-  progressBar: {
+
+  progressCircle: {
+    minWidth: 112,
+    minHeight: 112,
+    borderRadius: "50%",
+    background: "#ecfdf5",
+    color: "#166534",
+    border: "1px solid #bbf7d0",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+
+  progressBarLarge: {
     height: 12,
-    background: "#e5e7eb",
     borderRadius: 999,
+    background: "#e5e7eb",
     overflow: "hidden",
-    marginTop: 18,
+    marginBottom: 16,
   },
+
+  progressBar: {
+    height: 9,
+    borderRadius: 999,
+    background: "#e5e7eb",
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+
   progressFill: {
     height: "100%",
-    background: "#111827",
     borderRadius: 999,
-    transition: "width 0.3s ease",
+    background: "linear-gradient(90deg, #378ADD, #1D9E75)",
   },
-  actionsRow: {
-    marginTop: 18,
+
+  activeMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 2fr 1fr",
+    gap: 12,
+    marginBottom: 16,
+  },
+
+  infoBox: {
+    padding: 14,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    minWidth: 0,
+  },
+
+  activeActions: {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
   },
-  stepsSection: {
-    marginTop: 20,
-    borderTop: "1px solid #e5e7eb",
-    paddingTop: 20,
-  },
-  loadingSteps: {
-    color: "#6b7280",
-  },
-  currentFocusBox: {
-    marginBottom: 18,
-    padding: 16,
-    borderRadius: 12,
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
-  },
-  currentFocusLabel: {
-    fontSize: 12,
-    color: "#1d4ed8",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    fontWeight: 700,
-    marginBottom: 8,
-  },
-  currentFocusValue: {
-    fontSize: 18,
-    fontWeight: 800,
-    color: "#111827",
-    marginBottom: 6,
-  },
-  currentFocusHint: {
-    fontSize: 13,
-    color: "#4b5563",
-    lineHeight: 1.6,
-  },
-  skillGroupsList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 18,
-  },
-  skillGroupCard: {
-    border: "1px solid #e5e7eb",
-    borderRadius: 14,
-    background: "#ffffff",
-    padding: 18,
-  },
-  skillGroupHeader: {
+
+  dropdownHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 16,
     flexWrap: "wrap",
-    marginBottom: 14,
   },
-  skillGroupTitleRow: {
+
+  dropdownActions: {
     display: "flex",
     alignItems: "center",
     gap: 10,
-    marginBottom: 6,
+    flexWrap: "wrap",
   },
-  skillGroupTitle: {
+
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: 900,
+    color: "#9ca3af",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+
+  sectionTitle: {
     margin: 0,
     color: "#111827",
+    fontSize: 20,
+    letterSpacing: "-0.02em",
   },
-  skillGroupSubtext: {
-    color: "#6b7280",
+
+  smallText: {
+    margin: "8px 0 0",
+    color: "#64748b",
     fontSize: 13,
+    lineHeight: 1.6,
   },
-  groupStepsList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 14,
+
+  primaryButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "none",
+    background: "#111827",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 900,
+    whiteSpace: "nowrap",
   },
-  stepCard: {
-    border: "1px solid #e5e7eb",
+
+  secondaryButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#ffffff",
+    color: "#111827",
+    cursor: "pointer",
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+
+  dangerButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "none",
+    background: "#dc2626",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+
+  dropdownButton: {
+    border: "none",
     borderRadius: 14,
-    padding: 18,
-    background: "#fafafa",
+    padding: "11px 14px",
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: "pointer",
+    background: "#111827",
+    color: "#ffffff",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
   },
-  stepTop: {
+
+  dropdownArrow: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.14)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+  },
+
+  countPill: {
+    padding: "8px 11px",
+    borderRadius: 999,
+    background: "#eef2ff",
+    color: "#4338ca",
+    fontSize: 13,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  savedJobsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+    gap: 12,
+    marginTop: 16,
+  },
+
+  savedJobCard: {
+    borderRadius: 18,
+    padding: 16,
+    cursor: "pointer",
+    transition: "0.2s ease",
+    border: "1px solid #e5e7eb",
+    background: "#ffffff",
+    boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+  },
+
+  savedJobCardActive: {
+    border: "1px solid #4f46e5",
+    background: "#eef2ff",
+  },
+
+  savedJobTop: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: 16,
-    flexWrap: "wrap",
+    gap: 14,
+    marginBottom: 12,
   },
-  stepOrder: {
-    color: "#6b7280",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  stepTitle: {
-    margin: "0 0 8px 0",
-    color: "#111827",
-  },
-  stepDescription: {
-    margin: 0,
-    color: "#4b5563",
-    lineHeight: 1.7,
-  },
-  stepMeta: {
+
+  savedJobTitleWrap: {
     display: "flex",
-    gap: 16,
-    flexWrap: "wrap",
-    marginTop: 14,
-    color: "#374151",
-    fontSize: 14,
+    flexDirection: "column",
+    gap: 4,
+    minWidth: 0,
   },
-  stepActions: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    marginTop: 16,
-  },
-  stepBtn: {
-    padding: "8px 14px",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontWeight: 600,
-    fontSize: 13,
-    fontFamily: "inherit",
-    transition: "all 0.15s ease",
-  },
-  primaryButton: {
-    padding: "10px 14px",
-    borderRadius: 8,
-    border: "none",
-    background: "#111827",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  deleteBtn: {
-    width: 30,
-    height: 30,
-    border: "1px solid #fecaca",
-    background: "#fff5f5",
-    color: "#dc2626",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 12,
+
+  savedJobScore: {
+    minWidth: 54,
+    height: 54,
+    borderRadius: "50%",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    fontWeight: 900,
     flexShrink: 0,
   },
-  secondaryButton: {
-    padding: "10px 14px",
-    borderRadius: 8,
-    border: "1px solid #d1d5db",
-    background: "white",
-    color: "#111827",
+
+  savedJobMeta: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  savedJobFooter: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    paddingTop: 12,
+    borderTop: "1px solid #e5e7eb",
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 800,
+    flexWrap: "wrap",
+  },
+
+  smallGenerateButton: {
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "none",
+    background: "#111827",
+    color: "#ffffff",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 900,
+    fontSize: 12,
+    whiteSpace: "nowrap",
   },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: 700,
-    color: "#111827",
+
+  roadmapList: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+    gap: 12,
+    marginTop: 16,
+  },
+
+  roadmapPreviewCard: {
+    textAlign: "left",
+    borderRadius: 18,
+    padding: 16,
+    cursor: "pointer",
+    transition: "0.2s ease",
+    border: "1px solid #e5e7eb",
+    background: "#ffffff",
+    boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+  },
+
+  roadmapPreviewCardActive: {
+    border: "1px solid #4f46e5",
+    background: "#eef2ff",
+  },
+
+  roadmapPreviewHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 14,
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+
+  roadmapPreviewTitleWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    minWidth: 0,
+  },
+
+  roadmapPreviewProgress: {
+    minWidth: 54,
+    height: 54,
+    borderRadius: "50%",
+    background: "#111827",
+    color: "#ffffff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    flexShrink: 0,
+  },
+
+  roadmapPreviewMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 8,
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 800,
+    flexWrap: "wrap",
+  },
+
+  previewStatusPill: {
+    padding: "5px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 900,
+  },
+
+  previewStatusNotStarted: {
+    background: "#fef2f2",
+    color: "#991b1b",
+    border: "1px solid #fecaca",
+  },
+
+  previewStatusInProgress: {
+    background: "#fffbeb",
+    color: "#92400e",
+    border: "1px solid #fde68a",
+  },
+
+  previewStatusCompleted: {
+    background: "#ecfdf5",
+    color: "#166534",
+    border: "1px solid #bbf7d0",
+  },
+
+  selectedRoadmapHint: {
+    marginTop: 12,
+    padding: "8px 10px",
+    borderRadius: 12,
+    background: "#ffffff",
+    color: "#4338ca",
+    fontSize: 12,
+    fontWeight: 900,
+    textAlign: "center",
+  },
+
+  validatedSkillsBox: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 16,
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+  },
+
+  validatedSkillsHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
     marginBottom: 10,
+    color: "#166534",
+    fontSize: 13,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
-  emptyText: {
-    color: "#6b7280",
-    lineHeight: 1.7,
+
+  validatedSkillsList: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
   },
+
+  validatedSkillChip: {
+    padding: "7px 10px",
+    borderRadius: 999,
+    background: "#ffffff",
+    border: "1px solid #86efac",
+    color: "#166534",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+
+  stepsList: {
+    display: "grid",
+    gap: 12,
+    marginTop: 16,
+  },
+
+  stepCard: {
+    display: "grid",
+    gridTemplateColumns: "42px 1fr",
+    gap: 14,
+    padding: 16,
+    borderRadius: 16,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+  },
+
+  stepNumber: {
+    width: 36,
+    height: 36,
+    borderRadius: "50%",
+    background: "#eef2ff",
+    color: "#3730a3",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+  },
+
+  stepContent: {
+    minWidth: 0,
+  },
+
+  stepHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 14,
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+
+  stepTitle: {
+    margin: 0,
+    color: "#111827",
+    fontSize: 16,
+  },
+
+  stepMeta: {
+    marginTop: 5,
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+
+  stepDescription: {
+    margin: 0,
+    color: "#475569",
+    lineHeight: 1.6,
+    fontSize: 13,
+  },
+
+  statusButtonGroup: {
+    display: "flex",
+    gap: 6,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+
+  statusButton: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 999,
+    padding: "8px 10px",
+    background: "#ffffff",
+    color: "#64748b",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    transition: "0.15s ease",
+  },
+
+  statusButtonNotStarted: {
+    borderColor: "#fecaca",
+    background: "#fef2f2",
+    color: "#991b1b",
+  },
+
+  statusButtonInProgress: {
+    borderColor: "#fde68a",
+    background: "#fffbeb",
+    color: "#92400e",
+  },
+
+  statusButtonCompleted: {
+    borderColor: "#bbf7d0",
+    background: "#ecfdf5",
+    color: "#166534",
+  },
+
+  statusButtonActive: {
+    boxShadow: "0 6px 16px rgba(15, 23, 42, 0.08)",
+    transform: "translateY(-1px)",
+  },
+
+  statusButtonActiveNotStarted: {
+    background: "#dc2626",
+    borderColor: "#dc2626",
+    color: "#ffffff",
+  },
+
+  statusButtonActiveInProgress: {
+    background: "#f59e0b",
+    borderColor: "#f59e0b",
+    color: "#ffffff",
+  },
+
+  statusButtonActiveCompleted: {
+    background: "#16a34a",
+    borderColor: "#16a34a",
+    color: "#ffffff",
+  },
+
+  smallAddButton: {
+    marginTop: 12,
+    padding: "9px 12px",
+    borderRadius: 10,
+    border: "1px solid #c7d2fe",
+    background: "#eef2ff",
+    color: "#3730a3",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 12,
+  },
+
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(17, 24, 39, 0.45)",
+    background: "rgba(15, 23, 42, 0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 999,
+    zIndex: 9999,
+    padding: 20,
   },
+
   modal: {
     width: "100%",
-    maxWidth: 460,
-    background: "white",
-    borderRadius: 16,
-    padding: 24,
-    boxShadow: "0 20px 40px rgba(0,0,0,0.18)",
+    maxWidth: 520,
+    background: "#ffffff",
+    borderRadius: 20,
+    padding: 28,
+    boxShadow: "0 24px 70px rgba(15, 23, 42, 0.25)",
+    textAlign: "center",
+    border: "1px solid #e5e7eb",
   },
+
+  modalEmoji: {
+    fontSize: 46,
+    marginBottom: 10,
+  },
+
   modalTitle: {
-    marginTop: 0,
-    marginBottom: 12,
+    margin: "0 0 10px",
     color: "#111827",
+    fontSize: 24,
   },
+
   modalText: {
-    color: "#4b5563",
+    margin: "0 0 20px",
+    color: "#475569",
     lineHeight: 1.7,
-    marginBottom: 12,
   },
+
   modalActions: {
     display: "flex",
+    justifyContent: "center",
     gap: 12,
     flexWrap: "wrap",
+  },
+
+  emptyState: {
+    minHeight: 110,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    color: "#94a3b8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    padding: 18,
+    fontSize: 13,
     marginTop: 16,
   },
 };

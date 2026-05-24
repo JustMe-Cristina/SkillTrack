@@ -4,16 +4,6 @@ const auth = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FUNCȚII UTILITARE
-// Folosite de mai multe endpoint-uri, definite o singură dată aici sus
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Convertește un obiect Date sau string în format "YYYY-MM-DD".
- * MySQL returnează date ca obiecte Date — avem nevoie de string
- * pentru a le compara și afișa corect în frontend.
- */
 function formatDateLocal(dateValue) {
   const date = new Date(dateValue);
   const year = date.getFullYear();
@@ -22,22 +12,10 @@ function formatDateLocal(dateValue) {
   return `${year}-${month}-${day}`;
 }
 
-/**
- * Calculează streak-ul curent (zile consecutive de activitate).
- *
- * Logica: pornind de azi, mergem înapoi zi cu zi.
- * Cât timp ziua respectivă e în setul zilelor active, incrementăm streak-ul.
- * Prima zi inactivă oprește numărătoarea.
- *
- * Exemplu:
- *   Azi = activ, ieri = activ, alaltăieri = inactiv → streak = 2
- */
 function calculateStreak(activityRows) {
-  // Construim un Set cu toate datele active (ex: "2025-03-19")
   const activeDays = new Set(activityRows.map((row) => row.date));
   let streak = 0;
 
-  // Pornim de la ziua de azi la miezul nopții
   const current = new Date();
   current.setHours(0, 0, 0, 0);
 
@@ -46,10 +24,8 @@ function calculateStreak(activityRows) {
 
     if (activeDays.has(key)) {
       streak += 1;
-      // Mergem cu o zi înapoi
       current.setDate(current.getDate() - 1);
     } else {
-      // Ziua asta nu e activă — streak-ul s-a oprit
       break;
     }
   }
@@ -57,19 +33,8 @@ function calculateStreak(activityRows) {
   return streak;
 }
 
-/**
- * Generează un mesaj motivațional bazat pe scorul mediu.
- *
- * Logica e bazată pe Flow Theory (Csikszentmihalyi, 1990):
- * - Sub 40%: utilizatorul e la început, orice progres contează
- * - 40-70%: zona de flow — dificultatea depășește ușor nivelul actual,
- *            condiție optimă pentru învățare
- * - Peste 70%: utilizatorul e competitiv, aproape de obiectiv
- */
 function buildMotivationalMessage(score) {
-  if (score < 40) {
-    return "Ești la început — fiecare skill adăugat contează.";
-  }
+  if (score < 40) return "Ești la început — fiecare skill adăugat contează.";
 
   if (score <= 70) {
     return "Ești în zona de creștere — provocarea depășește ușor nivelul actual. Aceasta este condiția exactă pentru progres real.";
@@ -78,46 +43,26 @@ function buildMotivationalMessage(score) {
   return "Ești competitiv — joburile tale țintă sunt la îndemână.";
 }
 
-/**
- * Calculează scorul de potrivire dintre un set de skills ale userului
- * și lista de skills cerute de un job.
- *
- * Formula: skills_acoperite / total_skills_job * 100
- *
- * Parametri:
- *   userSkillIds — Set cu ID-urile skills pe care userul le are
- *   jobSkills    — array de obiecte { skill_id, name, ... } cerute de job
- *
- * Folosit în SHAP pentru a simula scoruri cu/fără un skill anume.
- */
 function calculateScore(userSkillIds, jobSkills) {
   const total = jobSkills.length;
   if (total === 0) return 0;
 
-  const matched = jobSkills.filter((s) => userSkillIds.has(s.skill_id)).length;
+  const matched = jobSkills.filter((skill) =>
+    userSkillIds.has(Number(skill.skill_id))
+  ).length;
+
   return Math.round((matched / total) * 100);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/analytics/activity
-//
-// Returnează datele pentru heatmap-ul de activitate (stil GitHub)
-// și calculele pentru streak.
-//
-// Ce face:
-//   1. Ia din activity_log toate acțiunile userului din ultimul an
-//   2. Le grupează pe zile (câte acțiuni per zi)
-//   3. Calculează streak-ul curent
-//   4. Returnează totul pentru frontend
-//
-// Folosit în: PanouPrincipal.jsx (heatmap + streak)
-// ─────────────────────────────────────────────────────────────────────────────
+function toNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
 
 router.get("/activity", auth, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Luăm toate acțiunile din ultimele 365 zile, grupate pe dată
     const [rows] = await db.query(
       `SELECT
          DATE(created_at) AS date,
@@ -130,22 +75,17 @@ router.get("/activity", auth, async (req, res) => {
       [userId]
     );
 
-    // Convertim datele în format consistent pentru frontend
     const activity = rows.map((row) => ({
       date: formatDateLocal(row.date),
-      count: Number(row.count)
+      count: toNumber(row.count)
     }));
-
-    const streak = calculateStreak(activity);
-    const totalActions = activity.reduce((sum, day) => sum + day.count, 0);
-    const activeDays = activity.length; // câte zile distincte a fost activ
 
     return res.json({
       ok: true,
-      activity,      // array de { date, count } pentru heatmap
-      streak,        // numărul de zile consecutive curente
-      totalActions,  // total acțiuni în ultimul an
-      activeDays     // numărul de zile în care a fost activ
+      activity,
+      streak: calculateStreak(activity),
+      totalActions: activity.reduce((sum, day) => sum + day.count, 0),
+      activeDays: activity.length
     });
   } catch (err) {
     console.error("GET ACTIVITY ERROR:", err);
@@ -153,32 +93,15 @@ router.get("/activity", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/analytics/dashboard
-//
-// Date agregate pentru pagina principală (PanouPrincipal).
-//
-// Ce face:
-//   1. Ia numele userului
-//   2. Ia toate joburile cu scorurile lor
-//   3. Calculează scorul mediu de compatibilitate
-//   4. Găsește jobul cu cel mai bun scor (bestJob) — folosit pentru focus
-//   5. Ia activitatea pentru streak + heatmap
-//
-// Folosit în: PanouPrincipal.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.get("/dashboard", auth, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Luăm numele userului pentru header ("Bună, Cristina")
     const [[userRow]] = await db.query(
       `SELECT name FROM users WHERE id = ?`,
       [userId]
     );
 
-    // Toate joburile userului cu scorurile lor
     const [jobs] = await db.query(
       `SELECT id, title, company, match_score
        FROM jobs
@@ -187,7 +110,6 @@ router.get("/dashboard", auth, async (req, res) => {
       [userId]
     );
 
-    // Activitate pentru heatmap și streak — cu detalii per tip acțiune
     const [activityRows] = await db.query(
       `SELECT
          DATE(created_at) AS date,
@@ -200,7 +122,6 @@ router.get("/dashboard", auth, async (req, res) => {
       [userId]
     );
 
-    // Detalii per zi pentru tooltip heatmap
     const [activityDetails] = await db.query(
       `SELECT
          DATE(created_at) AS date,
@@ -215,60 +136,66 @@ router.get("/dashboard", auth, async (req, res) => {
     );
 
     const detailsMap = {};
+
     for (const row of activityDetails) {
       const dateKey = formatDateLocal(row.date);
-      if (!detailsMap[dateKey]) detailsMap[dateKey] = [];
-      detailsMap[dateKey].push({ type: row.action_type, count: Number(row.count) });
+
+      if (!detailsMap[dateKey]) {
+        detailsMap[dateKey] = [];
+      }
+
+      detailsMap[dateKey].push({
+        type: row.action_type,
+        count: toNumber(row.count)
+      });
     }
 
-    const activity = activityRows.map((row) => ({
-      date: formatDateLocal(row.date),
-      count: Number(row.count),
-      details: detailsMap[formatDateLocal(row.date)] || []
-    }));
+    const activity = activityRows.map((row) => {
+      const dateKey = formatDateLocal(row.date);
 
-    const streak = calculateStreak(activity);
-    const activeDays = activity.length;
+      return {
+        date: dateKey,
+        count: toNumber(row.count),
+        details: detailsMap[dateKey] || []
+      };
+    });
 
-    // Scorul mediu pe toate joburile
     const avgScore =
       jobs.length === 0
         ? 0
         : Math.round(
-            jobs.reduce((sum, job) => sum + (Number(job.match_score) || 0), 0) /
+            jobs.reduce((sum, job) => sum + toNumber(job.match_score), 0) /
               jobs.length
           );
 
-    // Jobul cu scorul cel mai mare
     const bestJob =
       jobs.length === 0
         ? null
         : [...jobs].sort(
-            (a, b) => (Number(b.match_score) || 0) - (Number(a.match_score) || 0)
+            (a, b) => toNumber(b.match_score) - toNumber(a.match_score)
           )[0];
 
-    // Numărul de skills în profil
-    const [skillCountRow] = await db.query(
-      `SELECT COUNT(*) as cnt FROM user_skills WHERE user_id = ?`,
+    const [[skillCountRow]] = await db.query(
+      `SELECT COUNT(*) AS cnt FROM user_skills WHERE user_id = ?`,
       [userId]
     );
-    const skillCount = Number(skillCountRow[0]?.cnt || 0);
 
     return res.json({
       ok: true,
       user: { name: userRow?.name || "Utilizator" },
       avgScore,
-      streak,
-      activeDays,
+      motivationalMessage: buildMotivationalMessage(avgScore),
+      streak: calculateStreak(activity),
+      activeDays: activity.length,
       activity,
-      skillCount,
+      skillCount: toNumber(skillCountRow?.cnt),
       totalJobs: jobs.length,
       bestJob: bestJob
         ? {
             id: bestJob.id,
             title: bestJob.title,
             company: bestJob.company,
-            score: Number(bestJob.match_score) || 0
+            score: toNumber(bestJob.match_score)
           }
         : null
     });
@@ -278,30 +205,365 @@ router.get("/dashboard", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/analytics/shap/:jobId
-//
-// Explicabilitate locală — SHAP inspired (permutation-based feature importance)
-//
-// Ideea: pentru fiecare skill pe care userul NU îl are dar jobul îl cere,
-// simulăm că userul ÎL ARE și măsurăm cu cât crește scorul.
-// Diferența = contribuția marginală a acelui skill = shapValue.
-//
-// Exemplu concret:
-//   Scor curent fără SQL: 62%
-//   Scor simulat cu SQL:  75%
-//   shapValue pentru SQL: 75 - 62 = +13pp
-//
-// Rezultatul e sortat descrescător — skill-ul cu cel mai mare impact
-// apare primul. Asta îi spune userului "învață asta primul".
-//
-// Referință academică:
-//   Lundberg & Lee (2017), NeurIPS — SHAP unified framework
-//   Cogent Business & Management (2025), doi:10.1080/23311975.2025.2570881
-//
-// Folosit în: Analytics.jsx (matricea SHAP)
-//             PanouPrincipal.jsx (focus săptămânal — primul skill din listă)
-// ─────────────────────────────────────────────────────────────────────────────
+router.get("/overview", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [[jobStats]] = await db.query(
+      `SELECT
+         COUNT(*) AS totalJobs,
+         ROUND(AVG(match_score)) AS avgMatchScore,
+         MAX(match_score) AS maxMatchScore,
+         MIN(match_score) AS minMatchScore,
+         COUNT(DISTINCT category) AS totalCategories
+       FROM jobs
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    const [[skillStats]] = await db.query(
+      `SELECT COUNT(DISTINCT js.skill_id) AS totalRequiredSkills
+       FROM job_skills js
+       JOIN jobs j ON j.id = js.job_id
+       WHERE j.user_id = ?`,
+      [userId]
+    );
+
+    const [[bestJob]] = await db.query(
+      `SELECT id, title, company, match_score
+       FROM jobs
+       WHERE user_id = ?
+       ORDER BY match_score DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    const [[weakestJob]] = await db.query(
+      `SELECT id, title, company, match_score
+       FROM jobs
+       WHERE user_id = ?
+       ORDER BY match_score ASC
+       LIMIT 1`,
+      [userId]
+    );
+
+    return res.json({
+      ok: true,
+      overview: {
+        totalJobs: toNumber(jobStats?.totalJobs),
+        avgMatchScore: toNumber(jobStats?.avgMatchScore),
+        maxMatchScore: toNumber(jobStats?.maxMatchScore),
+        minMatchScore: toNumber(jobStats?.minMatchScore),
+        totalCategories: toNumber(jobStats?.totalCategories),
+        totalRequiredSkills: toNumber(skillStats?.totalRequiredSkills),
+        bestJob: bestJob || null,
+        weakestJob: weakestJob || null
+      }
+    });
+  } catch (err) {
+    console.error("ANALYTICS OVERVIEW ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.get("/job-categories", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         category,
+         COUNT(*) AS total,
+         ROUND(AVG(match_score)) AS avgMatchScore
+       FROM jobs
+       WHERE user_id = ?
+         AND category IS NOT NULL
+       GROUP BY category
+       ORDER BY total DESC`,
+      [userId]
+    );
+
+    return res.json({
+      ok: true,
+      categories: rows.map((row) => ({
+        category: row.category,
+        total: toNumber(row.total),
+        avgMatchScore: toNumber(row.avgMatchScore)
+      }))
+    });
+  } catch (err) {
+    console.error("JOB CATEGORIES ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.get("/work-modes", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         work_mode,
+         COUNT(*) AS total,
+         ROUND(AVG(match_score)) AS avgMatchScore
+       FROM jobs
+       WHERE user_id = ?
+         AND work_mode IS NOT NULL
+       GROUP BY work_mode
+       ORDER BY total DESC`,
+      [userId]
+    );
+
+    return res.json({
+      ok: true,
+      workModes: rows.map((row) => ({
+        workMode: row.work_mode,
+        total: toNumber(row.total),
+        avgMatchScore: toNumber(row.avgMatchScore)
+      }))
+    });
+  } catch (err) {
+    console.error("WORK MODES ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.get("/seniority", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         seniority,
+         COUNT(*) AS total,
+         ROUND(AVG(match_score)) AS avgMatchScore
+       FROM jobs
+       WHERE user_id = ?
+         AND seniority IS NOT NULL
+       GROUP BY seniority
+       ORDER BY
+         CASE seniority
+           WHEN 'INTERNSHIP' THEN 1
+           WHEN 'JUNIOR' THEN 2
+           WHEN 'MID' THEN 3
+           WHEN 'SENIOR' THEN 4
+           ELSE 5
+         END`,
+      [userId]
+    );
+
+    return res.json({
+      ok: true,
+      seniority: rows.map((row) => ({
+        seniority: row.seniority,
+        total: toNumber(row.total),
+        avgMatchScore: toNumber(row.avgMatchScore)
+      }))
+    });
+  } catch (err) {
+    console.error("SENIORITY ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.get("/top-skills", auth, async (req, res) => {
+  const userId = req.user.userId;
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(rawLimit, 1), 50)
+    : 15;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         s.id,
+         s.name,
+         s.category,
+         COUNT(*) AS demandCount
+       FROM job_skills js
+       JOIN skills s ON s.id = js.skill_id
+       JOIN jobs j ON j.id = js.job_id
+       WHERE j.user_id = ?
+       GROUP BY s.id, s.name, s.category
+       ORDER BY demandCount DESC, s.name ASC
+       LIMIT ?`,
+      [userId, limit]
+    );
+
+    return res.json({
+      ok: true,
+      topSkills: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        demandCount: toNumber(row.demandCount)
+      }))
+    });
+  } catch (err) {
+    console.error("TOP SKILLS ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.get("/difficulty", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [[stats]] = await db.query(
+      `SELECT
+         ROUND(AVG(difficulty_score)) AS avgDifficulty,
+         MIN(difficulty_score) AS minDifficulty,
+         MAX(difficulty_score) AS maxDifficulty
+       FROM jobs
+       WHERE user_id = ?
+         AND difficulty_score IS NOT NULL`,
+      [userId]
+    );
+
+    const [distribution] = await db.query(
+      `SELECT
+         CASE
+           WHEN difficulty_score < 40 THEN 'LOW'
+           WHEN difficulty_score BETWEEN 40 AND 70 THEN 'MEDIUM'
+           ELSE 'HIGH'
+         END AS difficultyLevel,
+         COUNT(*) AS total
+       FROM jobs
+       WHERE user_id = ?
+         AND difficulty_score IS NOT NULL
+       GROUP BY difficultyLevel
+       ORDER BY
+         CASE difficultyLevel
+           WHEN 'LOW' THEN 1
+           WHEN 'MEDIUM' THEN 2
+           WHEN 'HIGH' THEN 3
+           ELSE 4
+         END`,
+      [userId]
+    );
+
+    return res.json({
+      ok: true,
+      difficulty: {
+        avgDifficulty: toNumber(stats?.avgDifficulty),
+        minDifficulty: toNumber(stats?.minDifficulty),
+        maxDifficulty: toNumber(stats?.maxDifficulty),
+        distribution: distribution.map((row) => ({
+          level: row.difficultyLevel,
+          total: toNumber(row.total)
+        }))
+      }
+    });
+  } catch (err) {
+    console.error("DIFFICULTY ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+router.get("/insights", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [[overview]] = await db.query(
+      `SELECT
+         COUNT(*) AS totalJobs,
+         ROUND(AVG(match_score)) AS avgMatchScore
+       FROM jobs
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    const [[topCategory]] = await db.query(
+      `SELECT category, COUNT(*) AS total
+       FROM jobs
+       WHERE user_id = ?
+         AND category IS NOT NULL
+       GROUP BY category
+       ORDER BY total DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    const [[topWorkMode]] = await db.query(
+      `SELECT work_mode, COUNT(*) AS total
+       FROM jobs
+       WHERE user_id = ?
+         AND work_mode IS NOT NULL
+       GROUP BY work_mode
+       ORDER BY total DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    const [[topSkill]] = await db.query(
+      `SELECT s.name, COUNT(*) AS demandCount
+       FROM job_skills js
+       JOIN skills s ON s.id = js.skill_id
+       JOIN jobs j ON j.id = js.job_id
+       WHERE j.user_id = ?
+       GROUP BY s.id, s.name
+       ORDER BY demandCount DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    const [[bestJob]] = await db.query(
+      `SELECT title, company, match_score
+       FROM jobs
+       WHERE user_id = ?
+       ORDER BY match_score DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    const insights = [];
+
+    if (toNumber(overview?.totalJobs) > 0) {
+      insights.push({
+        type: "SUMMARY",
+        title: "Portofoliu de joburi analizat",
+        message: `Ai ${overview.totalJobs} joburi în portofoliu, cu un scor mediu de compatibilitate de ${overview.avgMatchScore || 0}%.`
+      });
+    }
+
+    if (topCategory) {
+      insights.push({
+        type: "CATEGORY",
+        title: "Categoria dominantă",
+        message: `Cele mai multe joburi analizate sunt din categoria ${topCategory.category}, cu ${topCategory.total} apariții.`
+      });
+    }
+
+    if (topWorkMode) {
+      insights.push({
+        type: "WORK_MODE",
+        title: "Mod de lucru dominant",
+        message: `Modelul ${topWorkMode.work_mode} apare cel mai des în datasetul tău, în ${topWorkMode.total} joburi.`
+      });
+    }
+
+    if (topSkill) {
+      insights.push({
+        type: "SKILL_DEMAND",
+        title: "Cel mai cerut skill",
+        message: `${topSkill.name} este cel mai frecvent skill cerut, apărând în ${topSkill.demandCount} joburi.`
+      });
+    }
+
+    if (bestJob) {
+      insights.push({
+        type: "BEST_MATCH",
+        title: "Cel mai bun match",
+        message: `Cel mai potrivit job pentru profilul tău este ${bestJob.title} la ${bestJob.company}, cu scor de ${bestJob.match_score}%.`
+      });
+    }
+
+    return res.json({ ok: true, insights });
+  } catch (err) {
+    console.error("INSIGHTS ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
 
 router.get("/shap/:jobId", auth, async (req, res) => {
   const userId = req.user.userId;
@@ -312,7 +574,6 @@ router.get("/shap/:jobId", auth, async (req, res) => {
   }
 
   try {
-    // 1. Verificăm că jobul există și aparține userului curent
     const [[job]] = await db.query(
       `SELECT id, title, company, match_score
        FROM jobs
@@ -324,16 +585,14 @@ router.get("/shap/:jobId", auth, async (req, res) => {
       return res.status(404).json({ ok: false, error: "Job negăsit" });
     }
 
-    // 2. Toate skills cerute de job (din tabela job_skills + skills)
     const [jobSkills] = await db.query(
-      `SELECT s.id AS skill_id, s.name, s.category, s.weight
+      `SELECT s.id AS skill_id, s.name, s.category
        FROM job_skills js
        JOIN skills s ON s.id = js.skill_id
        WHERE js.job_id = ?`,
       [jobId]
     );
 
-    // Dacă jobul nu are skills asociate, nu putem calcula nimic
     if (jobSkills.length === 0) {
       return res.json({
         ok: true,
@@ -341,24 +600,21 @@ router.get("/shap/:jobId", auth, async (req, res) => {
         jobTitle: job.title,
         baseScore: 0,
         explanations: [],
-        message: "Jobul nu are skills asociate. Analizează-l din nou."
+        message: "Jobul nu are skilluri asociate. Analizează-l din nou."
       });
     }
 
-    // 3. Skills pe care userul le are în profil
     const [userSkillRows] = await db.query(
       `SELECT skill_id FROM user_skills WHERE user_id = ?`,
       [userId]
     );
-    const userSkillIds = new Set(userSkillRows.map((r) => r.skill_id));
 
-    // 4. Scorul de bază — cât e compatibilitatea acum, fără nicio simulare
+    const userSkillIds = new Set(userSkillRows.map((row) => Number(row.skill_id)));
     const baseScore = calculateScore(userSkillIds, jobSkills);
+    const gaps = jobSkills.filter(
+      (skill) => !userSkillIds.has(Number(skill.skill_id))
+    );
 
-    // 5. Gap-urile = skills cerute de job pe care userul NU le are
-    const gaps = jobSkills.filter((s) => !userSkillIds.has(s.skill_id));
-
-    // Dacă nu există gaps, userul acoperă tot — scor maxim
     if (gaps.length === 0) {
       return res.json({
         ok: true,
@@ -366,41 +622,34 @@ router.get("/shap/:jobId", auth, async (req, res) => {
         jobTitle: job.title,
         baseScore,
         explanations: [],
-        message: "Profilul tău acoperă complet cerințele acestui job!"
+        message: "Profilul tău acoperă complet cerințele acestui job."
       });
     }
 
-    // 6. Pentru fiecare gap, simulăm că userul ÎL ARE și calculăm impactul
     const explanations = gaps.map((skill) => {
-      // Creăm un Set nou cu toate skills userului + skill-ul simulat
-      const simulatedIds = new Set([...userSkillIds, skill.skill_id]);
-
-      // Calculăm scorul cu skill-ul adăugat
+      const simulatedIds = new Set([...userSkillIds, Number(skill.skill_id)]);
       const scoreWith = calculateScore(simulatedIds, jobSkills);
-
-      // shapValue = câte puncte procentuale adaugă acest skill
       const shapValue = scoreWith - baseScore;
 
       return {
         skillId: skill.skill_id,
         skill: skill.name,
         category: skill.category,
-        weight: Number(skill.weight),
-        shapValue,   // ex: 13 înseamnă +13pp
-        scoreWith    // ex: 75 înseamnă că scorul ar fi 75% dacă ai skill-ul
+        shapValue,
+        scoreWith
       };
     });
 
-    // 7. Sortăm descrescător după shapValue
-    // Skill-ul cu cel mai mare impact apare primul
-    explanations.sort((a, b) => b.shapValue - a.shapValue);
+    explanations.sort(
+      (a, b) => b.shapValue - a.shapValue || a.skill.localeCompare(b.skill)
+    );
 
     return res.json({
       ok: true,
       jobId,
       jobTitle: job.title,
-      baseScore,     // scorul curent al userului față de job
-      explanations   // lista de skills lipsă cu impactul lor
+      baseScore,
+      explanations
     });
   } catch (err) {
     console.error("SHAP ERROR:", err);
@@ -408,30 +657,10 @@ router.get("/shap/:jobId", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/analytics/market
-//
-// Analiză agregată pe toate joburile din portofoliu.
-//
-// Returnează:
-//   - distribuția joburilor pe 3 zone de compatibilitate (fără prag fix)
-//   - scorul mediu al portofoliului
-//   - pentru fiecare skill lipsă: cu câte puncte crește scorul mediu
-//     dacă l-ai dobândi
-//   - bestNextSkill: skill-ul cu cel mai mare câștig mediu de scor
-//
-// NU folosim un prag fix de "eligibilitate" — utilizatorul interpretează
-// singur ce înseamnă un scor bun pentru contextul lui.
-//
-// Referință: WEF Future of Jobs (2025)
-//            Frontiers AI (2025) doi:10.3389/frai.2025.1660548
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.get("/market", auth, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // 1. Toate joburile userului
     const [jobs] = await db.query(
       `SELECT id, title, company, match_score
        FROM jobs
@@ -451,19 +680,18 @@ router.get("/market", auth, async (req, res) => {
       });
     }
 
-    // 2. Skills userului
     const [userSkillRows] = await db.query(
       `SELECT skill_id FROM user_skills WHERE user_id = ?`,
       [userId]
     );
-    const userSkillIds = new Set(userSkillRows.map((r) => r.skill_id));
 
-    // 3. Skills pentru toate joburile
-    const jobIds = jobs.map((j) => j.id);
+    const userSkillIds = new Set(userSkillRows.map((row) => Number(row.skill_id)));
+
+    const jobIds = jobs.map((job) => job.id);
     const placeholders = jobIds.map(() => "?").join(",");
 
     const [allJobSkills] = await db.query(
-      `SELECT js.job_id, s.id AS skill_id, s.name, s.category, s.weight
+      `SELECT js.job_id, s.id AS skill_id, s.name, s.category
        FROM job_skills js
        JOIN skills s ON s.id = js.skill_id
        WHERE js.job_id IN (${placeholders})`,
@@ -471,57 +699,55 @@ router.get("/market", auth, async (req, res) => {
     );
 
     const skillsByJob = {};
+
     for (const row of allJobSkills) {
-      if (!skillsByJob[row.job_id]) skillsByJob[row.job_id] = [];
+      if (!skillsByJob[row.job_id]) {
+        skillsByJob[row.job_id] = [];
+      }
+
       skillsByJob[row.job_id].push(row);
     }
 
-    // 4. Scorul mediu al portofoliului
     const avgScore = Math.round(
-      jobs.reduce((sum, j) => sum + (Number(j.match_score) || 0), 0) / jobs.length
+      jobs.reduce((sum, job) => sum + toNumber(job.match_score), 0) /
+        jobs.length
     );
 
-    // 5. Distribuție pe 3 zone — fără prag fix de "eligibilitate"
-    // Utilizatorul vede câte joburi sunt în fiecare zonă și decide singur
-    const distribution = {
-      high: 0,    // scor > 70% — compatibilitate înaltă
-      medium: 0,  // scor 40-70% — compatibilitate medie
-      low: 0      // scor < 40% — compatibilitate scăzută
-    };
+    const distribution = { high: 0, medium: 0, low: 0 };
 
     for (const job of jobs) {
-      const score = Number(job.match_score) || 0;
-      if (score > 70) distribution.high++;
-      else if (score >= 40) distribution.medium++;
-      else distribution.low++;
+      const score = toNumber(job.match_score);
+
+      if (score > 70) distribution.high += 1;
+      else if (score >= 40) distribution.medium += 1;
+      else distribution.low += 1;
     }
 
-    // 6. Impact per skill lipsă — câte puncte crește scorul mediu
-    // pentru fiecare skill pe care userul NU îl are
     const skillImpactMap = new Map();
 
     for (const job of jobs) {
       const jobSkills = skillsByJob[job.id] || [];
       const currentScore = calculateScore(userSkillIds, jobSkills);
-      const gaps = jobSkills.filter((s) => !userSkillIds.has(s.skill_id));
+      const gaps = jobSkills.filter(
+        (skill) => !userSkillIds.has(Number(skill.skill_id))
+      );
 
       for (const skill of gaps) {
-        const simulatedIds = new Set([...userSkillIds, skill.skill_id]);
+        const simulatedIds = new Set([...userSkillIds, Number(skill.skill_id)]);
         const scoreWith = calculateScore(simulatedIds, jobSkills);
         const gain = scoreWith - currentScore;
 
-        // Includem skill-ul dacă adaugă cel puțin 1 punct
         if (gain > 0) {
           if (!skillImpactMap.has(skill.skill_id)) {
             skillImpactMap.set(skill.skill_id, {
               skillId: skill.skill_id,
               name: skill.name,
               category: skill.category,
-              weight: Number(skill.weight),
               totalGain: 0,
               jobsAffected: new Set()
             });
           }
+
           const entry = skillImpactMap.get(skill.skill_id);
           entry.totalGain += gain;
           entry.jobsAffected.add(job.id);
@@ -529,31 +755,28 @@ router.get("/market", auth, async (req, res) => {
       }
     }
 
-    // 7. Construim lista sortată după câștig mediu per job afectat
     const skillsImpact = Array.from(skillImpactMap.values())
-      .map((s) => ({
-        skillId: s.skillId,
-        name: s.name,
-        category: s.category,
-        weight: s.weight,
-        jobsAffected: s.jobsAffected.size,
-        // Câștig mediu de scor per job afectat
-        avgGain: Math.round(s.totalGain / s.jobsAffected.size)
+      .map((skill) => ({
+        skillId: skill.skillId,
+        name: skill.name,
+        category: skill.category,
+        jobsAffected: skill.jobsAffected.size,
+        avgGain: Math.round(skill.totalGain / skill.jobsAffected.size)
       }))
-      .sort((a, b) =>
-        b.avgGain - a.avgGain ||         // sortare primară: câștig mediu
-        b.jobsAffected - a.jobsAffected  // sortare secundară: joburi afectate
+      .sort(
+        (a, b) =>
+          b.avgGain - a.avgGain ||
+          b.jobsAffected - a.jobsAffected ||
+          a.name.localeCompare(b.name)
       );
-
-    const bestNextSkill = skillsImpact.length > 0 ? skillsImpact[0] : null;
 
     return res.json({
       ok: true,
       totalJobs: jobs.length,
       avgScore,
-      distribution,    // { high, medium, low }
+      distribution,
       skillsImpact,
-      bestNextSkill
+      bestNextSkill: skillsImpact.length > 0 ? skillsImpact[0] : null
     });
   } catch (err) {
     console.error("MARKET ERROR:", err);
@@ -561,46 +784,23 @@ router.get("/market", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/analytics/profile-vs-market
-//
-// Compară profilul utilizatorului față de cerințele medii ale pieței
-// (joburile salvate), pe categorii de skills.
-//
-// Pentru fiecare categorie (Data, BI, Tools, DevOps, Business):
-//   - userCoverage: % din skills din categorie pe care userul le are
-//   - marketDemand: % din skills din categorie cerute în medie de joburi
-//   - gap: diferența dintre cele două
-//
-// Exemplu:
-//   Data: userCoverage=60%, marketDemand=80%, gap=-20pp → user în urmă
-//   Business: userCoverage=50%, marketDemand=45%, gap=+5pp → user peste piață
-//
-// Referință academică:
-//   Social Comparison Theory (Festinger, 1954) — utilizatorul se vede
-//   față de un benchmark real, stimulând auto-reglarea comportamentului
-//   Paulsen & Lindsay (2024), Educ. Inf. Technol., doi:10.1007/s10639-023-12401-4
-//
-// Folosit în: Analytics.jsx (secțiunea Profil vs. Piață)
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.get("/profile-vs-market", auth, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // 1. Toate skills din catalog, grupate pe categorie
     const [allSkills] = await db.query(
-      `SELECT id, name, category, weight FROM skills ORDER BY category, name`
+      `SELECT id, name, category
+       FROM skills
+       ORDER BY category, name`
     );
 
-    // 2. Skills pe care userul le are
     const [userSkillRows] = await db.query(
       `SELECT skill_id FROM user_skills WHERE user_id = ?`,
       [userId]
     );
-    const userSkillIds = new Set(userSkillRows.map((r) => r.skill_id));
 
-    // 3. Joburile userului
+    const userSkillIds = new Set(userSkillRows.map((row) => Number(row.skill_id)));
+
     const [jobs] = await db.query(
       `SELECT id FROM jobs WHERE user_id = ?`,
       [userId]
@@ -611,128 +811,143 @@ router.get("/profile-vs-market", auth, async (req, res) => {
         ok: true,
         categories: [],
         topGapCategory: null,
-        message: "Nu ai joburi salvate. Adaugă joburi pentru a vedea comparația."
+        insight: "Nu ai joburi salvate. Adaugă joburi pentru a vedea comparația.",
+        totalJobs: 0
       });
     }
 
-    // 4. Toate skills cerute de joburile userului
-    const jobIds = jobs.map((j) => j.id);
+    const jobIds = jobs.map((job) => job.id);
     const placeholders = jobIds.map(() => "?").join(",");
 
     const [jobSkillRows] = await db.query(
-      `SELECT DISTINCT skill_id FROM job_skills WHERE job_id IN (${placeholders})`,
+      `SELECT DISTINCT skill_id
+       FROM job_skills
+       WHERE job_id IN (${placeholders})`,
       jobIds
     );
-    const marketSkillIds = new Set(jobSkillRows.map((r) => r.skill_id));
 
-    // 5. Construim comparația pe categorii
-    // Grupăm toate skills din catalog pe categorie
-    // Acum păstrăm și lista individuală de skills per categorie
+    const marketSkillIds = new Set(
+      jobSkillRows.map((row) => Number(row.skill_id))
+    );
+
     const categoriesMap = {};
 
     for (const skill of allSkills) {
-      if (!categoriesMap[skill.category]) {
-        categoriesMap[skill.category] = {
-          category: skill.category,
+      const category = skill.category || "Other";
+
+      if (!categoriesMap[category]) {
+        categoriesMap[category] = {
+          category,
           totalSkills: 0,
           userHas: 0,
           marketNeeds: 0,
-          // Liste cu skill-uri individuale pentru afișare expandabilă
-          skills: []  // fiecare element: { id, name, userHas, marketNeeds }
+          skills: []
         };
       }
 
-      const cat = categoriesMap[skill.category];
+      const cat = categoriesMap[category];
+
       cat.totalSkills += 1;
 
-      const hasUser = userSkillIds.has(skill.id);
-      const hasMarket = marketSkillIds.has(skill.id);
+      const hasUser = userSkillIds.has(Number(skill.id));
+      const hasMarket = marketSkillIds.has(Number(skill.id));
 
       if (hasUser) cat.userHas += 1;
       if (hasMarket) cat.marketNeeds += 1;
 
-      // Adăugăm skill-ul în lista individuală
-      // Afișăm doar skills relevante: le are userul SAU le cer joburile
-      // Skills pe care nu le are nimeni și nu le cere nimeni = omise
       if (hasUser || hasMarket) {
         cat.skills.push({
           id: skill.id,
           name: skill.name,
-          // ✓ ai tu + cer joburile
-          // ✓ ai tu, dar nu cer joburile
-          // ✗ nu ai, dar cer joburile
-          // (skills pe care nu le ai și nu le cer sunt omise)
           userHas: hasUser,
           marketNeeds: hasMarket
         });
       }
     }
 
-    // 6. Calculăm acoperirea per categorie
-    // Metrica corectă: câte din skills CERUTE le ai tu
-    // acoperire = skills cerute pe care le ai / total skills cerute
     const categories = Object.values(categoriesMap)
-      .filter((cat) => cat.marketNeeds > 0)  // doar categorii cerute de joburile tale
+      .filter((cat) => cat.marketNeeds > 0)
       .map((cat) => {
-        // Skills cerute pe care le ai — intersecția
         const coveredRequired = cat.skills.filter(
-          (s) => s.userHas && s.marketNeeds
+          (skill) => skill.userHas && skill.marketNeeds
         ).length;
 
-        // Skills cerute pe care NU le ai — gap-ul real
         const missingSkills = cat.skills
-          .filter((s) => !s.userHas && s.marketNeeds)
-          .map((s) => s.name);
+          .filter((skill) => !skill.userHas && skill.marketNeeds)
+          .map((skill) => skill.name);
 
-        // Skills pe care le ai dar nu sunt cerute — "în plus"
         const extraSkills = cat.skills
-          .filter((s) => s.userHas && !s.marketNeeds)
-          .map((s) => s.name);
+          .filter((skill) => skill.userHas && !skill.marketNeeds)
+          .map((skill) => skill.name);
 
-        // Procentul de acoperire din ce e cerut
-        const coveragePercent = cat.marketNeeds === 0
-          ? 100
-          : Math.round((coveredRequired / cat.marketNeeds) * 100);
+        const coveragePercent =
+          cat.marketNeeds === 0
+            ? 100
+            : Math.round((coveredRequired / cat.marketNeeds) * 100);
 
         const skillsSorted = cat.skills.sort((a, b) => {
-          // Lipsă și cerute → primele
-          if (!a.userHas && a.marketNeeds && (b.userHas || !b.marketNeeds)) return -1;
-          if (!b.userHas && b.marketNeeds && (a.userHas || !a.marketNeeds)) return 1;
-          // Cerute și ai → al doilea
-          if (a.userHas && a.marketNeeds && !b.marketNeeds) return -1;
-          if (b.userHas && b.marketNeeds && !a.marketNeeds) return 1;
+          if (!a.userHas && a.marketNeeds && (b.userHas || !b.marketNeeds)) {
+            return -1;
+          }
+
+          if (!b.userHas && b.marketNeeds && (a.userHas || !a.marketNeeds)) {
+            return 1;
+          }
+
+          if (a.userHas && a.marketNeeds && !b.marketNeeds) {
+            return -1;
+          }
+
+          if (b.userHas && b.marketNeeds && !a.marketNeeds) {
+            return 1;
+          }
+
           return a.name.localeCompare(b.name);
         });
 
         return {
           category: cat.category,
-          coveredRequired,       // câte skills cerute le ai
-          marketNeeds: cat.marketNeeds,  // total skills cerute
-          coveragePercent,       // % acoperire din ce e cerut
-          missingSkills,         // lista skills lipsă (cerute, nu le ai)
-          extraSkills,           // lista skills în plus (le ai, nu sunt cerute)
+          coveredRequired,
+          marketNeeds: cat.marketNeeds,
+          coveragePercent,
+          missingSkills,
+          extraSkills,
           userHas: cat.userHas,
           skills: skillsSorted
         };
       })
-      .sort((a, b) => a.coveragePercent - b.coveragePercent); // cele mai slabe primele
+      .sort(
+        (a, b) =>
+          a.coveragePercent - b.coveragePercent ||
+          b.marketNeeds - a.marketNeeds
+      );
 
-    // 7. Insight textual bazat pe skills lipsă concrete
-    const allMissingSkills = categories.flatMap((c) => c.missingSkills);
-    const allExtraSkills = categories.flatMap((c) => c.extraSkills);
+    const allMissingSkills = categories.flatMap((category) => category.missingSkills);
+    const allExtraSkills = categories.flatMap((category) => category.extraSkills);
 
     let insight = null;
+
     if (allMissingSkills.length === 0) {
-      insight = "Ai toate skills-urile cerute de joburile salvate.";
+      insight = "Ai toate skillurile cerute de joburile salvate.";
     } else if (allMissingSkills.length <= 3) {
-      insight = `Îți lipsesc ${allMissingSkills.length} skills cerute: ${allMissingSkills.join(", ")}.`;
+      insight = `Îți lipsesc ${allMissingSkills.length} skilluri cerute: ${allMissingSkills.join(
+        ", "
+      )}.`;
+
       if (allExtraSkills.length > 0) {
-        insight += ` Ai în plus: ${allExtraSkills.slice(0, 3).join(", ")}${allExtraSkills.length > 3 ? " și altele" : ""}.`;
+        insight += ` Ai în plus: ${allExtraSkills.slice(0, 3).join(", ")}${
+          allExtraSkills.length > 3 ? " și altele" : ""
+        }.`;
       }
     } else {
-      insight = `Îți lipsesc ${allMissingSkills.length} skills cerute. Prioritare: ${allMissingSkills.slice(0, 3).join(", ")}.`;
+      insight = `Îți lipsesc ${allMissingSkills.length} skilluri cerute. Prioritare: ${allMissingSkills
+        .slice(0, 3)
+        .join(", ")}.`;
+
       if (allExtraSkills.length > 0) {
-        insight += ` Ai în plus față de cerințe: ${allExtraSkills.slice(0, 2).join(", ")} și altele.`;
+        insight += ` Ai în plus față de cerințe: ${allExtraSkills
+          .slice(0, 2)
+          .join(", ")} și altele.`;
       }
     }
 

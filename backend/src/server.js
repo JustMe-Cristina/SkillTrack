@@ -13,20 +13,56 @@ const cvRoutes = require("./routes/cv.routes");
 const roadmapsRoutes = require("./routes/roadmaps.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const userRoutes = require("./routes/user.routes");
+const mlRoutes = require("./routes/ml.routes");
+const profileRoutes = require("./routes/profile.routes");
 
 const app = express();
+
+const PORT = Number(process.env.PORT) || 5050;
 
 app.use(helmet());
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
-    methods: ["GET", "POST", "PATCH", "DELETE"],
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://localhost:5175"
+    ],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: false
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    ok: true,
+    message: "SkillTrack API running"
+  });
+});
+
+app.get("/test-db", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT 1 AS test");
+
+    res.status(200).json({
+      ok: true,
+      db: "connected",
+      rows
+    });
+  } catch (err) {
+    console.error("DB error:", err);
+
+    res.status(500).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobsRoutes);
@@ -36,23 +72,37 @@ app.use("/api/cv", cvRoutes);
 app.use("/api/roadmaps", roadmapsRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/ml", mlRoutes);
+app.use("/api/profile", profileRoutes);
 
-app.get("/", (req, res) => {
-  res.status(200).json({ ok: true, message: "SkillTrack API running" });
+app.use((req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: "Ruta nu a fost găsită."
+  });
 });
 
-app.get("/test-db", async (req, res) => {
+app.use((err, req, res, next) => {
+  console.error("SERVER ERROR:", err);
+
+  res.status(500).json({
+    ok: false,
+    error: "Eroare internă de server."
+  });
+});
+
+async function startServer() {
   try {
-    const [rows] = await db.query("SELECT 1 AS test");
-    res.status(200).json({ ok: true, db: "connected", rows });
+    await db.query("SELECT 1");
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log("✅ DB connected");
+    });
   } catch (err) {
-    console.error("DB error:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("❌ DB connection failed:", err.message);
+    process.exit(1);
   }
-});
+}
 
-const PORT = Number(process.env.PORT) || 5000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+startServer();

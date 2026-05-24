@@ -1,46 +1,99 @@
 const express = require("express");
 const db = require("../config/db");
 const auth = require("../middleware/auth.middleware");
+const jobAnalysisService = require("../services/jobAnalysis.service");
 const { logActivity } = require("../utils/activityLogger");
-const { analyzeJobData } = require("../services/jobAnalysis.service");
 
 const router = express.Router();
 
-/**
- * POST /api/jobs/analyze
- * Analizează jobul fără să îl salveze
- */
-router.post("/analyze", auth, async (req, res) => {
-  const {
-    title,
-    company,
-    location,
-    work_mode,
-    employment_type,
-    description
-  } = req.body;
+async function runJobAnalysis(payload, userId) {
+  if (typeof jobAnalysisService === "function") {
+    return jobAnalysisService(payload, userId);
+  }
 
-  const userId = req.user.userId;
-
-  if (!title || !description) {
-    return res.status(400).json({
-      ok: false,
-      error: "Missing title/description"
+  if (typeof jobAnalysisService.analyzeJobData === "function") {
+    return jobAnalysisService.analyzeJobData({
+      userId,
+      title: payload.title,
+      company: payload.company,
+      location: payload.location,
+      description: payload.description
     });
   }
 
-  try {
-    const analysis = await analyzeJobData({
-      userId,
-      title,
-      company,
-      location,
-      work_mode,
-      employment_type,
-      description
-    });
+  if (typeof jobAnalysisService.analyzeJob === "function") {
+    return jobAnalysisService.analyzeJob(payload, userId);
+  }
 
-    await logActivity(userId, "JOB_ANALYZED", "job", null);
+  if (typeof jobAnalysisService.analyzeJobDescription === "function") {
+    return jobAnalysisService.analyzeJobDescription(payload, userId);
+  }
+
+  if (typeof jobAnalysisService.analyze === "function") {
+    return jobAnalysisService.analyze(payload, userId);
+  }
+
+  throw new Error(
+    "jobAnalysis.service.js nu exportă o funcție de analiză validă."
+  );
+}
+
+function normalizeBoolean(value) {
+  if (value === true) return 1;
+  if (value === false) return 0;
+  if (value === 1 || value === 0) return value;
+  return null;
+}
+
+function safeJson(value) {
+  if (value === undefined || value === null) return null;
+  return JSON.stringify(value);
+}
+
+function extractSkillId(skill) {
+  return skill.skillId || skill.id || skill.skill_id || null;
+}
+
+function extractSkillName(skill) {
+  return skill.skill || skill.name || skill.skill_name || "";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/jobs/analyze
+// Analizează un job fără să îl salveze.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post("/analyze", auth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const { title, company, location, description } = req.body;
+
+    if (!title || !description) {
+      return res.status(400).json({
+        ok: false,
+        error: "Titlul și descrierea jobului sunt obligatorii."
+      });
+    }
+
+    const analysis = await runJobAnalysis(
+      {
+        title,
+        company,
+        location,
+        description
+      },
+      userId
+    );
+
+    try {
+      await logActivity(userId, "JOB_ANALYZED", {
+        title,
+        company: company || null
+      });
+    } catch (logErr) {
+      console.warn("Activity log warning:", logErr.message);
+    }
 
     return res.json({
       ok: true,
@@ -50,129 +103,171 @@ router.post("/analyze", auth, async (req, res) => {
     console.error("JOB ANALYZE ERROR:", err);
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Nu s-a putut analiza jobul."
     });
   }
 });
 
-/**
- * POST /api/jobs
- * Salvează jobul analizat
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/jobs
+// Salvează job analizat + skilluri + rezultat ML.
+// ─────────────────────────────────────────────────────────────────────────────
+
 router.post("/", auth, async (req, res) => {
   const userId = req.user.userId;
 
-  const {
-    title,
-    company,
-    location,
-    work_mode,
-    employment_type,
-    description,
-    score,
-    detectedSkills,
-    status,
-    applied_at,
-    start_period,
-    experience_min,
-    experience_label,
-    degree_level,
-    degree_label,
-    meets_experience_requirement,
-    meets_degree_requirement
-  } = req.body;
-
-  if (!title || !description) {
-    return res.status(400).json({
-      ok: false,
-      error: "Missing title/description"
-    });
-  }
-
-  if (!location || !String(location).trim()) {
-    return res.status(400).json({
-      ok: false,
-      error: "Missing location"
-    });
-  }
+  const connection = await db.getConnection();
 
   try {
-    const [jobResult] = await db.query(
-      `INSERT INTO jobs
-        (
-          user_id,
-          title,
-          company,
-          location,
-          work_mode,
-          employment_type,
-          description,
-          match_score,
-          status,
-          applied_at,
-          start_period,
-          experience_min,
-          experience_label,
-          degree_level,
-          degree_label,
-          meets_experience_requirement,
-          meets_degree_requirement
-        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    const {
+      title,
+      company,
+      location,
+      work_mode,
+      employment_type,
+      description,
+      score,
+      detectedSkills,
+      matches,
+      gaps,
+      status,
+
+      experience_min,
+      experience_label,
+      degree_level,
+      degree_label,
+      meets_experience_requirement,
+      meets_degree_requirement,
+
+      ml_predicted_category,
+      ml_model,
+      ml_confidence,
+      ml_probabilities_json
+    } = req.body;
+
+    if (!title || !description) {
+      return res.status(400).json({
+        ok: false,
+        error: "Titlul și descrierea jobului sunt obligatorii."
+      });
+    }
+
+    await connection.beginTransaction();
+
+    const [result] = await connection.query(
+      `INSERT INTO jobs (
+         user_id,
+         title,
+         company,
+         location,
+         work_mode,
+         employment_type,
+         description,
+         match_score,
+         status,
+         experience_min,
+         experience_label,
+         degree_level,
+         degree_label,
+         meets_experience_requirement,
+         meets_degree_requirement,
+         ml_predicted_category,
+         ml_model,
+         ml_confidence,
+         ml_probabilities_json
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         title,
         company || null,
-        String(location).trim(),
+        location || "Nespecificat",
         work_mode || null,
         employment_type || null,
         description,
-        Number(score) || 0,
+        Number(score || 0),
         status || "SALVAT",
-        applied_at || null,
-        start_period || null,
-        Number.isFinite(Number(experience_min)) ? Number(experience_min) : null,
+        experience_min ?? null,
         experience_label || null,
         degree_level || null,
         degree_label || null,
-        toNullableTinyInt(meets_experience_requirement),
-        toNullableTinyInt(meets_degree_requirement)
+        normalizeBoolean(meets_experience_requirement),
+        normalizeBoolean(meets_degree_requirement),
+        ml_predicted_category || null,
+        ml_model || null,
+        ml_confidence ?? null,
+        safeJson(ml_probabilities_json)
       ]
     );
 
-    const jobId = jobResult.insertId;
+    const jobId = result.insertId;
 
-    if (Array.isArray(detectedSkills) && detectedSkills.length > 0) {
-      for (const skill of detectedSkills) {
-        await db.query(
-          `INSERT IGNORE INTO job_skills
-            (job_id, skill_id, required_level, detected_by)
-           VALUES (?, ?, ?, ?)`,
-          [jobId, Number(skill.skillId), 1, "KEYWORD"]
-        );
+    const allSkills = [
+      ...(Array.isArray(detectedSkills) ? detectedSkills : []),
+      ...(Array.isArray(matches) ? matches : []),
+      ...(Array.isArray(gaps) ? gaps : [])
+    ];
+
+    const uniqueSkillMap = new Map();
+
+    for (const skill of allSkills) {
+      const skillId = extractSkillId(skill);
+      const skillName = extractSkillName(skill);
+
+      if (skillId) {
+        uniqueSkillMap.set(`id-${skillId}`, {
+          skillId,
+          skillName
+        });
       }
     }
 
-    await logActivity(userId, "JOB_SAVED", "job", jobId);
+    for (const item of uniqueSkillMap.values()) {
+      await connection.query(
+        `INSERT IGNORE INTO job_skills
+         (job_id, skill_id, required_level, detected_by)
+         VALUES (?, ?, ?, ?)`,
+        [jobId, item.skillId, 1, "ANALYSIS"]
+      );
+    }
+
+    await connection.commit();
+
+    try {
+      await logActivity(userId, "JOB_SAVED", {
+        jobId,
+        title,
+        company: company || null,
+        ml_predicted_category: ml_predicted_category || null
+      });
+    } catch (logErr) {
+      console.warn("Activity log warning:", logErr.message);
+    }
 
     return res.status(201).json({
       ok: true,
-      message: "Job saved",
-      jobId
+      jobId,
+      id: jobId,
+      message: "Job salvat cu succes."
     });
   } catch (err) {
-    console.error("JOB SAVE ERROR:", err);
+    await connection.rollback();
+
+    console.error("SAVE JOB ERROR:", err);
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Nu s-a putut salva jobul."
     });
+  } finally {
+    connection.release();
   }
 });
 
-/**
- * GET /api/jobs
- * Listează joburile utilizatorului
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/jobs
+// Lista joburilor utilizatorului.
+// ─────────────────────────────────────────────────────────────────────────────
+
 router.get("/", auth, async (req, res) => {
   const userId = req.user.userId;
 
@@ -185,19 +280,21 @@ router.get("/", auth, async (req, res) => {
          location,
          work_mode,
          employment_type,
-         description,
+         seniority,
+         category,
+         ml_predicted_category,
+         ml_model,
+         ml_confidence,
          match_score,
          status,
-         applied_at,
-         start_period,
+         created_at,
+         updated_at,
          experience_min,
          experience_label,
          degree_level,
          degree_label,
          meets_experience_requirement,
-         meets_degree_requirement,
-         created_at,
-         updated_at
+         meets_degree_requirement
        FROM jobs
        WHERE user_id = ?
        ORDER BY created_at DESC`,
@@ -212,15 +309,16 @@ router.get("/", auth, async (req, res) => {
     console.error("GET JOBS ERROR:", err);
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Nu s-au putut încărca joburile."
     });
   }
 });
 
-/**
- * GET /api/jobs/:id
- * Returnează detaliile unui job + analiza completă recalculată dinamic
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/jobs/:id
+// Detalii job + skilluri + rezultat ML.
+// ─────────────────────────────────────────────────────────────────────────────
+
 router.get("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
@@ -228,49 +326,31 @@ router.get("/:id", auth, async (req, res) => {
   if (!Number.isFinite(jobId)) {
     return res.status(400).json({
       ok: false,
-      error: "Invalid job id"
+      error: "ID job invalid."
     });
   }
 
   try {
-    const [jobs] = await db.query(
-      `SELECT
-         id,
-         title,
-         company,
-         location,
-         work_mode,
-         employment_type,
-         description,
-         match_score,
-         status,
-         applied_at,
-         start_period,
-         experience_min,
-         experience_label,
-         degree_level,
-         degree_label,
-         meets_experience_requirement,
-         meets_degree_requirement,
-         created_at,
-         updated_at
+    const [[job]] = await db.query(
+      `SELECT *
        FROM jobs
        WHERE id = ? AND user_id = ?`,
       [jobId, userId]
     );
 
-    if (jobs.length === 0) {
+    if (!job) {
       return res.status(404).json({
         ok: false,
-        error: "Job not found"
+        error: "Jobul nu a fost găsit."
       });
     }
 
-    const [requiredSkills] = await db.query(
+    const [skills] = await db.query(
       `SELECT
-         s.id AS skill_id,
+         s.id,
          s.name,
          s.category,
+         s.weight,
          js.required_level,
          js.detected_by
        FROM job_skills js
@@ -280,270 +360,93 @@ router.get("/:id", auth, async (req, res) => {
       [jobId]
     );
 
-    const skillIds = requiredSkills.map((s) => Number(s.skill_id));
-    const userSkillIds = new Set();
+    let mlProbabilities = [];
 
-    if (skillIds.length > 0) {
-      const placeholders = skillIds.map(() => "?").join(",");
-
-      const [userSkillRows] = await db.query(
-        `SELECT skill_id
-         FROM user_skills
-         WHERE user_id = ? AND skill_id IN (${placeholders})`,
-        [userId, ...skillIds]
-      );
-
-      for (const row of userSkillRows) {
-        userSkillIds.add(Number(row.skill_id));
+    try {
+      if (job.ml_probabilities_json) {
+        mlProbabilities =
+          typeof job.ml_probabilities_json === "string"
+            ? JSON.parse(job.ml_probabilities_json)
+            : job.ml_probabilities_json;
       }
+    } catch {
+      mlProbabilities = [];
     }
-
-    const matches = [];
-    const gaps = [];
-
-    for (const skill of requiredSkills) {
-      const hasSkill = userSkillIds.has(Number(skill.skill_id));
-
-      if (hasSkill) {
-        matches.push({
-          skill: skill.name,
-          skillId: Number(skill.skill_id),
-          category: skill.category
-        });
-      } else {
-        gaps.push({
-          skill: skill.name,
-          skillId: Number(skill.skill_id),
-          category: skill.category
-        });
-      }
-    }
-
-    const totalSkills = requiredSkills.length;
-    const matchedSkills = matches.length;
-
-    const dynamicScore =
-      totalSkills === 0 ? 0 : Math.round((matchedSkills / totalSkills) * 100);
 
     return res.json({
       ok: true,
       job: {
-        ...jobs[0],
-        match_score: dynamicScore,
-        requiredSkills,
-        matches,
-        gaps
+        ...job,
+        ml_probabilities: mlProbabilities,
+        skills
       }
     });
   } catch (err) {
     console.error("GET JOB DETAILS ERROR:", err);
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Nu s-au putut încărca detaliile jobului."
     });
   }
 });
 
-/**
- * PATCH /api/jobs/:id
- * Actualizează metadatele jobului
- */
-router.patch("/:id", auth, async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/jobs/:id/status
+// Actualizare status job.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.patch("/:id/status", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
-
-  const {
-    company,
-    location,
-    work_mode,
-    employment_type,
-    status,
-    applied_at,
-    start_period,
-    experience_min,
-    experience_label,
-    degree_level,
-    degree_label,
-    meets_experience_requirement,
-    meets_degree_requirement
-  } = req.body;
+  const { status } = req.body;
 
   if (!Number.isFinite(jobId)) {
     return res.status(400).json({
       ok: false,
-      error: "Invalid job id"
+      error: "ID job invalid."
     });
   }
 
-  const allowedStatuses = ["SALVAT", "APLICAT", "IN_PROCES", "RESPINS", "ACCEPTAT"];
-  const allowedWorkModes = ["REMOTE", "HYBRID", "ONSITE"];
-  const allowedEmploymentTypes = ["FULL_TIME", "PART_TIME", "INTERNSHIP"];
-  const allowedDegreeLevels = ["HIGH_SCHOOL", "BACHELOR", "MASTER", "PHD"];
-
-  const fields = [];
-  const values = [];
+  if (!status) {
+    return res.status(400).json({
+      ok: false,
+      error: "Statusul este obligatoriu."
+    });
+  }
 
   try {
-    if (company !== undefined) {
-      fields.push("company = ?");
-      values.push(company || null);
-    }
-
-    if (location !== undefined) {
-      if (!String(location).trim()) {
-        return res.status(400).json({
-          ok: false,
-          error: "Missing location"
-        });
-      }
-
-      fields.push("location = ?");
-      values.push(String(location).trim());
-    }
-
-    if (work_mode !== undefined) {
-      if (work_mode !== null && work_mode !== "" && !allowedWorkModes.includes(work_mode)) {
-        return res.status(400).json({
-          ok: false,
-          error: "Invalid work mode"
-        });
-      }
-
-      fields.push("work_mode = ?");
-      values.push(work_mode || null);
-    }
-
-    if (employment_type !== undefined) {
-      if (
-        employment_type !== null &&
-        employment_type !== "" &&
-        !allowedEmploymentTypes.includes(employment_type)
-      ) {
-        return res.status(400).json({
-          ok: false,
-          error: "Invalid employment type"
-        });
-      }
-
-      fields.push("employment_type = ?");
-      values.push(employment_type || null);
-    }
-
-    if (status !== undefined) {
-      if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({
-          ok: false,
-          error: "Invalid status"
-        });
-      }
-
-      fields.push("status = ?");
-      values.push(status);
-    }
-
-    if (applied_at !== undefined) {
-      fields.push("applied_at = ?");
-      values.push(applied_at || null);
-    }
-
-    if (start_period !== undefined) {
-      fields.push("start_period = ?");
-      values.push(start_period || null);
-    }
-
-    if (experience_min !== undefined) {
-      const parsedExperience =
-        experience_min === null || experience_min === ""
-          ? null
-          : Number(experience_min);
-
-      if (parsedExperience !== null && !Number.isFinite(parsedExperience)) {
-        return res.status(400).json({
-          ok: false,
-          error: "Invalid experience_min"
-        });
-      }
-
-      fields.push("experience_min = ?");
-      values.push(parsedExperience);
-    }
-
-    if (experience_label !== undefined) {
-      fields.push("experience_label = ?");
-      values.push(experience_label || null);
-    }
-
-    if (degree_level !== undefined) {
-      if (
-        degree_level !== null &&
-        degree_level !== "" &&
-        !allowedDegreeLevels.includes(degree_level)
-      ) {
-        return res.status(400).json({
-          ok: false,
-          error: "Invalid degree_level"
-        });
-      }
-
-      fields.push("degree_level = ?");
-      values.push(degree_level || null);
-    }
-
-    if (degree_label !== undefined) {
-      fields.push("degree_label = ?");
-      values.push(degree_label || null);
-    }
-
-    if (meets_experience_requirement !== undefined) {
-      fields.push("meets_experience_requirement = ?");
-      values.push(toNullableTinyInt(meets_experience_requirement));
-    }
-
-    if (meets_degree_requirement !== undefined) {
-      fields.push("meets_degree_requirement = ?");
-      values.push(toNullableTinyInt(meets_degree_requirement));
-    }
-
-    if (fields.length === 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "Nothing to update"
-      });
-    }
-
-    values.push(jobId, userId);
-
     const [result] = await db.query(
       `UPDATE jobs
-       SET ${fields.join(", ")}
+       SET status = ?
        WHERE id = ? AND user_id = ?`,
-      values
+      [status, jobId, userId]
     );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Job not found"
+        error: "Jobul nu a fost găsit."
       });
     }
 
     return res.json({
       ok: true,
-      message: "Job updated"
+      message: "Status actualizat."
     });
   } catch (err) {
-    console.error("PATCH JOB ERROR:", err);
+    console.error("UPDATE JOB STATUS ERROR:", err);
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Nu s-a putut actualiza statusul."
     });
   }
 });
 
-/**
- * DELETE /api/jobs/:id
- * Șterge un job
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/jobs/:id
+// Ștergere job.
+// ─────────────────────────────────────────────────────────────────────────────
+
 router.delete("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
@@ -551,51 +454,49 @@ router.delete("/:id", auth, async (req, res) => {
   if (!Number.isFinite(jobId)) {
     return res.status(400).json({
       ok: false,
-      error: "Invalid job id"
+      error: "ID job invalid."
     });
   }
 
+  const connection = await db.getConnection();
+
   try {
-    const [result] = await db.query(
-      `DELETE FROM jobs
-       WHERE id = ? AND user_id = ?`,
+    await connection.beginTransaction();
+
+    await connection.query(
+      `DELETE FROM job_skills WHERE job_id = ?`,
+      [jobId]
+    );
+
+    const [result] = await connection.query(
+      `DELETE FROM jobs WHERE id = ? AND user_id = ?`,
       [jobId, userId]
     );
+
+    await connection.commit();
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Job not found"
+        error: "Jobul nu a fost găsit."
       });
     }
 
     return res.json({
       ok: true,
-      message: "Job deleted"
+      message: "Job șters."
     });
   } catch (err) {
+    await connection.rollback();
+
     console.error("DELETE JOB ERROR:", err);
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: "Nu s-a putut șterge jobul."
     });
+  } finally {
+    connection.release();
   }
 });
-
-function toNullableTinyInt(value) {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  if (value === true || value === 1 || value === "1") {
-    return 1;
-  }
-
-  if (value === false || value === 0 || value === "0") {
-    return 0;
-  }
-
-  return null;
-}
 
 module.exports = router;

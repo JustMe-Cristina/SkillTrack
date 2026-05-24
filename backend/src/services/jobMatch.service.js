@@ -1,74 +1,96 @@
 const db = require("../config/db");
 
-async function recalculateJobsForUser(userId) {
-  const [jobs] = await db.execute(
-    "SELECT id FROM jobs WHERE user_id = ?",
+function toNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+async function calculateJobMatchScore(connection, userId, jobId) {
+  const [jobSkills] = await connection.query(
+    `SELECT skill_id
+     FROM job_skills
+     WHERE job_id = ?`,
+    [jobId]
+  );
+
+  if (jobSkills.length === 0) {
+    return 0;
+  }
+
+  const [userSkills] = await connection.query(
+    `SELECT skill_id
+     FROM user_skills
+     WHERE user_id = ?`,
     [userId]
   );
 
-  if (jobs.length === 0) {
-    return;
-  }
-
-  const jobIds = jobs.map((job) => job.id);
-
-  const placeholders = jobIds.map(() => "?").join(",");
-
-  const [jobSkills] = await db.execute(
-    `
-    SELECT js.job_id, s.name
-    FROM job_skills js
-    JOIN skills s ON js.skill_id = s.id
-    WHERE js.job_id IN (${placeholders})
-    `,
-    jobIds
+  const userSkillIds = new Set(
+    userSkills.map((skill) => Number(skill.skill_id))
   );
 
-  const [userSkills] = await db.execute(
-    `
-    SELECT s.name
-    FROM user_skills us
-    JOIN skills s ON us.skill_id = s.id
-    WHERE us.user_id = ?
-    `,
-    [userId]
-  );
+  const matchedSkills = jobSkills.filter((skill) =>
+    userSkillIds.has(Number(skill.skill_id))
+  ).length;
 
-  const userSkillSet = new Set(userSkills.map((skill) => skill.name));
-  const jobSkillsMap = {};
+  return Math.round((matchedSkills / jobSkills.length) * 100);
+}
 
-  for (const row of jobSkills) {
-    if (!jobSkillsMap[row.job_id]) {
-      jobSkillsMap[row.job_id] = [];
-    }
+async function recalculateJobScoreForUser(userId, jobId) {
+  const connection = await db.getConnection();
 
-    jobSkillsMap[row.job_id].push(row.name);
-  }
+  try {
+    const score = await calculateJobMatchScore(connection, userId, jobId);
 
-  for (const jobId of jobIds) {
-    const requiredSkills = jobSkillsMap[jobId] || [];
-
-    if (requiredSkills.length === 0) {
-      await db.execute(
-        "UPDATE jobs SET match_score = 0 WHERE id = ?",
-        [jobId]
-      );
-      continue;
-    }
-
-    const matchedCount = requiredSkills.filter((skillName) =>
-      userSkillSet.has(skillName)
-    ).length;
-
-    const score = Math.round((matchedCount / requiredSkills.length) * 100);
-
-    await db.execute(
-      "UPDATE jobs SET match_score = ? WHERE id = ?",
-      [score, jobId]
+    await connection.query(
+      `UPDATE jobs
+       SET match_score = ?
+       WHERE id = ? AND user_id = ?`,
+      [score, jobId, userId]
     );
+
+    return score;
+  } finally {
+    connection.release();
+  }
+}
+
+async function recalculateAllJobScoresForUser(userId) {
+  const connection = await db.getConnection();
+
+  try {
+    const [jobs] = await connection.query(
+      `SELECT id
+       FROM jobs
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    const updatedJobs = [];
+
+    for (const job of jobs) {
+      const score = await calculateJobMatchScore(connection, userId, job.id);
+
+      await connection.query(
+        `UPDATE jobs
+         SET match_score = ?
+         WHERE id = ? AND user_id = ?`,
+        [score, job.id, userId]
+      );
+
+      updatedJobs.push({
+        jobId: job.id,
+        matchScore: toNumber(score)
+      });
+    }
+
+    return updatedJobs;
+  } finally {
+    connection.release();
   }
 }
 
 module.exports = {
-  recalculateJobsForUser
+  calculateJobMatchScore,
+  recalculateJobScoreForUser,
+  recalculateAllJobScoresForUser
 };

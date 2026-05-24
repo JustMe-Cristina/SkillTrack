@@ -1,7 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-import ProtectedRoute from "./components/ProtectedRoute";
-
+import RutaProtejata from "./components/RutaProtejata";
+import LandingPage from "./pages/LandingPage";
 import Autentificare from "./pages/Autentificare";
 import PanouPrincipal from "./pages/PanouPrincipal";
 import AnalizaJob from "./pages/AnalizaJob";
@@ -11,87 +11,95 @@ import PlanuriDeDezvoltare from "./pages/PlanuriDeDezvoltare";
 import Analytics from "./pages/Analytics";
 import ProfilulMeu from "./pages/ProfilulMeu";
 import DetaliiJobUrmarit from "./pages/DetaliiJobUrmarit";
+import VerificareEmail from "./pages/VerificareEmail";
+import AiUitatParola from "./pages/AiUitatParola";
+import ResetareParola from "./pages/ResetareParola";
+
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/autentificare" element={<Autentificare />} />
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
 
-        <Route
-          path="/panou"
-          element={
-            <ProtectedRoute>
-              <PanouPrincipal />
-            </ProtectedRoute>
-          }
-        />
+      <Route path="/autentificare" element={<Autentificare />} />
+      <Route path="/verificare-email" element={<VerificareEmail />} />
+      <Route path="/ai-uitat-parola" element={<AiUitatParola />} />
+      <Route path="/resetare-parola/:token" element={<ResetareParola />} />
 
-        <Route
-          path="/analiza"
-          element={
-            <ProtectedRoute>
-              <AnalizaJob />
-            </ProtectedRoute>
-          }
-        />
+      <Route
+        path="/panou"
+        element={
+          <RutaProtejata>
+            <PanouPrincipal />
+          </RutaProtejata>
+        }
+      />
 
-        <Route
-          path="/joburi-urmarite"
-          element={
-            <ProtectedRoute>
-              <JoburiUrmarite />
-            </ProtectedRoute>
-          }
-        />
+      <Route
+        path="/analiza"
+        element={
+          <RutaProtejata>
+            <AnalizaJob />
+          </RutaProtejata>
+        }
+      />
 
-        <Route
-          path="/joburi-urmarite/:jobId"
-          element={
-            <ProtectedRoute>
-              <DetaliiJobUrmarit />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/competentele-mele"
-          element={
-            <ProtectedRoute>
-              <CompetenteleMele />
-            </ProtectedRoute>
-          }
-        />
+      <Route
+        path="/joburi-urmarite"
+        element={
+          <RutaProtejata>
+            <JoburiUrmarite />
+          </RutaProtejata>
+        }
+      />
 
-        <Route
-          path="/roadmaps"
-          element={
-            <ProtectedRoute>
-              <PlanuriDeDezvoltare />
-            </ProtectedRoute>
-          }
-        />
+      <Route
+        path="/joburi-urmarite/:jobId"
+        element={
+          <RutaProtejata>
+            <DetaliiJobUrmarit />
+          </RutaProtejata>
+        }
+      />
 
-        <Route
-          path="/analytics"
-          element={
-            <ProtectedRoute>
-              <Analytics />
-            </ProtectedRoute>
-          }
-        />
+      <Route
+        path="/competentele-mele"
+        element={
+          <RutaProtejata>
+            <CompetenteleMele />
+          </RutaProtejata>
+        }
+      />
 
-        <Route
-          path="/profilul-meu"
-          element={
-            <ProtectedRoute>
-              <ProfilulMeu />
-            </ProtectedRoute>
-          }
-        />
+      <Route
+        path="/roadmaps"
+        element={
+          <RutaProtejata>
+            <PlanuriDeDezvoltare />
+          </RutaProtejata>
+        }
+      />
 
-        <Route path="*" element={<Navigate to="/panou" replace />} />
-      </Routes>
-    </BrowserRouter>
+      <Route
+        path="/analytics"
+        element={
+          <RutaProtejata>
+            <Analytics />
+          </RutaProtejata>
+        }
+      />
+
+      <Route
+        path="/profilul-meu"
+        element={
+          <RutaProtejata>
+            <ProfilulMeu />
+          </RutaProtejata>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

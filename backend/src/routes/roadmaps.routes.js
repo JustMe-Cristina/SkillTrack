@@ -1,344 +1,263 @@
 const express = require("express");
-const router = express.Router();
 const db = require("../config/db");
-const authMiddleware = require("../middleware/auth.middleware");
+const auth = require("../middleware/auth.middleware");
 const { logActivity } = require("../utils/activityLogger");
 
-// helper: generează 2 pași pentru un skill lipsă
-function generateStepsForSkill(skillName) {
-  return [
-    {
-      title: `Învață conceptele fundamentale ale competenței ${skillName}`,
-      description: `Parcurge noțiunile de bază și principalele concepte asociate competenței ${skillName}.`,
-      estimated_days: 3
-    },
-    {
-      title: `Aplică ${skillName} într-un mini-proiect`,
-      description: `Realizează un exercițiu practic sau un mini-proiect pentru a exersa competența ${skillName}.`,
-      estimated_days: 5
-    }
-  ];
+const router = express.Router();
+
+const STEP_STATUS = {
+  NOT_STARTED: "NOT_STARTED",
+  IN_PROGRESS: "IN_PROGRESS",
+  COMPLETED: "COMPLETED"
+};
+
+function toNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
-function getSkillGroupStatus(steps) {
-  if (!Array.isArray(steps) || steps.length === 0) {
-    return "NOT_STARTED";
-  }
-
-  const allCompleted = steps.every((step) => step.status === "COMPLETED");
-  if (allCompleted) {
-    return "COMPLETED";
-  }
-
-  const hasInProgress = steps.some((step) => step.status === "IN_PROGRESS");
-  if (hasInProgress) {
-    return "IN_PROGRESS";
-  }
-
-  return "NOT_STARTED";
-}
-
-function getSkillGroupSortWeight(status) {
-  if (status === "IN_PROGRESS") return 1;
-  if (status === "NOT_STARTED") return 2;
-  if (status === "COMPLETED") return 3;
-  return 4;
-}
-
-function buildSkillGroupsFromSteps(steps) {
-  const groupsMap = new Map();
-
-  for (const step of steps) {
-    const key = step.skill_id
-      ? `skill-${step.skill_id}`
-      : `name-${step.skill_name || "unknown"}`;
-
-    if (!groupsMap.has(key)) {
-      groupsMap.set(key, {
-        skill_id: step.skill_id || null,
-        skill_name: step.skill_name || "Skill",
-        frequency: Number(step.frequency || 0),
-        steps: []
-      });
-    }
-
-    groupsMap.get(key).steps.push(step);
-  }
-
-  const groups = Array.from(groupsMap.values()).map((group) => {
-    const orderedSteps = [...group.steps].sort(
-      (a, b) => Number(a.step_order) - Number(b.step_order)
-    );
-
-    const status = getSkillGroupStatus(orderedSteps);
-
-    let completed_at = null;
-
-    if (status === "COMPLETED") {
-      const completedDates = orderedSteps
-        .filter((step) => step.status === "COMPLETED" && step.updated_at)
-        .map((step) => new Date(step.updated_at).getTime())
-        .filter((value) => Number.isFinite(value));
-
-      if (completedDates.length > 0) {
-        completed_at = new Date(Math.max(...completedDates)).toISOString();
-      }
-    }
-
-    return {
-      ...group,
-      steps: orderedSteps,
-      status,
-      completed_at
-    };
-  });
-
-  groups.sort((a, b) => {
-    const weightDiff =
-      getSkillGroupSortWeight(a.status) - getSkillGroupSortWeight(b.status);
-
-    if (weightDiff !== 0) return weightDiff;
-
-    const freqDiff = Number(b.frequency || 0) - Number(a.frequency || 0);
-    if (freqDiff !== 0) return freqDiff;
-
-    return String(a.skill_name).localeCompare(String(b.skill_name));
-  });
-
-  return groups;
-}
-
-function buildSkillPreviewFromGroups(skillGroups) {
-  return skillGroups.map((group) => ({
-    skill_id: group.skill_id,
-    skill_name: group.skill_name,
-    frequency: group.frequency,
-    status: group.status,
-    is_completed: group.status === "COMPLETED"
-  }));
-}
-
-function getNextSkillFromGroups(skillGroups) {
-  const nextGroup = skillGroups.find(
-    (group) => group.status === "IN_PROGRESS" || group.status === "NOT_STARTED"
-  );
-
-  if (!nextGroup) return null;
-
+function buildConceptStep(skill, job, order) {
   return {
-    skill_id: nextGroup.skill_id,
-    skill_name: nextGroup.skill_name,
-    frequency: nextGroup.frequency,
-    status: nextGroup.status
+    skill_id: null,
+    step_order: order,
+    title: `Pas ${order}: Înțelege ${skill.name}`,
+    description:
+      `Începe cu fundamentele competenței ${skill.name} pentru rolul „${job.title}”. ` +
+      `Clarifică ce înseamnă această competență în contextul jobului, ce activități implică și ce rezultate se așteaptă de la tine. ` +
+      `Scopul acestui pas este să înțelegi conceptele de bază înainte de aplicare practică.`
   };
 }
 
-async function getSkillFrequencyMapForUser(userId) {
+function buildPracticeStep(skill, job, order) {
+  return {
+    skill_id: null,
+    step_order: order,
+    title: `Pas ${order}: Exersează ${skill.name}`,
+    description:
+      `Aplică ${skill.name} pe un scenariu apropiat de rolul „${job.title}”. ` +
+      `Folosește cerințele din descrierea jobului pentru a construi un exercițiu practic: notează ce problemă trebuie rezolvată, ce informații sunt necesare și ce livrabil ar trebui produs. ` +
+      `Acest pas transformă teoria într-o activitate concretă.`
+  };
+}
+
+function buildValidationStep(skill, job, order) {
+  return {
+    skill_id: skill.id,
+    step_order: order,
+    title: `Pas ${order}: Validează ${skill.name}`,
+    description:
+      `Finalizează un mini-livrabil care demonstrează competența ${skill.name} pentru rolul „${job.title}”. ` +
+      `Exemple: document de cerințe, checklist, mini-raport, test case, user story, query SQL, dashboard simplu sau alt livrabil relevant pentru skill. ` +
+      `După finalizarea acestui pas, poți adăuga skillul în catalogul tău de competențe.`
+  };
+}
+
+function buildInterviewStep(job, order) {
+  return {
+    skill_id: null,
+    step_order: order,
+    title: `Pas ${order}: Pregătește exemple pentru interviu`,
+    description:
+      `Profilul tău acoperă skillurile detectate pentru rolul „${job.title}”. ` +
+      `Pregătește 2-3 exemple concrete din experiența ta prin care poți demonstra competențele relevante: situație, acțiune, rezultat. ` +
+      `Actualizează CV-ul și pregătește răspunsuri pentru întrebări legate de rol.`
+  };
+}
+
+function buildGapBasedRoadmapSteps({ job, missingSkills }) {
+  if (!missingSkills.length) {
+    return [
+      {
+        skill_id: null,
+        step_order: 1,
+        title: "Pas 1: Consolidare profil profesional",
+        description:
+          `Profilul tău acoperă skillurile detectate pentru rolul „${job.title}”. ` +
+          `Revizuiește descrierea jobului, actualizează CV-ul și pregătește exemple concrete pentru interviu.`
+      },
+      buildInterviewStep(job, 2)
+    ];
+  }
+
+  const steps = [];
+  let order = 1;
+
+  for (const skill of missingSkills) {
+    steps.push(buildConceptStep(skill, job, order));
+    order += 1;
+
+    steps.push(buildPracticeStep(skill, job, order));
+    order += 1;
+
+    steps.push(buildValidationStep(skill, job, order));
+    order += 1;
+  }
+
+  return steps;
+}
+
+async function getUserSkillIds(userId) {
   const [rows] = await db.query(
-    `
-    SELECT
-      js.skill_id,
-      COUNT(*) AS frequency
-    FROM job_skills js
-    JOIN jobs j ON j.id = js.job_id
-    WHERE j.user_id = ?
-    GROUP BY js.skill_id
-    `,
+    `SELECT skill_id FROM user_skills WHERE user_id = ?`,
     [userId]
   );
 
-  const frequencyMap = new Map();
-
-  for (const row of rows) {
-    frequencyMap.set(Number(row.skill_id), Number(row.frequency || 0));
-  }
-
-  return frequencyMap;
+  return new Set(rows.map((row) => Number(row.skill_id)));
 }
 
-/**
- * POST /api/roadmaps/generate/:jobId
- * Generează roadmap pe baza skill-urilor lipsă pentru un job
- */
-router.post("/generate/:jobId", authMiddleware, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const jobId = Number(req.params.jobId);
+async function getJobSkills(jobId) {
+  const [rows] = await db.query(
+    `SELECT
+       s.id,
+       s.name,
+       s.category,
+       s.weight
+     FROM job_skills js
+     JOIN skills s ON s.id = js.skill_id
+     WHERE js.job_id = ?
+     ORDER BY s.category, s.name`,
+    [jobId]
+  );
 
-    if (!Number.isFinite(jobId)) {
-      return res.status(400).json({
-        ok: false,
-        message: "ID job invalid."
-      });
-    }
+  return rows;
+}
 
-    const [jobs] = await db.query(
-      `SELECT *
-       FROM jobs
-       WHERE id = ? AND user_id = ?`,
-      [jobId, userId]
-    );
+async function recalculateRoadmapProgress(connection, roadmapId) {
+  const [[stats]] = await connection.query(
+    `SELECT
+       COUNT(*) AS total_steps,
+       SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_steps
+     FROM roadmap_steps
+     WHERE roadmap_id = ?`,
+    [roadmapId]
+  );
 
-    if (jobs.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        message: "Jobul nu a fost găsit."
-      });
-    }
+  const totalSteps = toNumber(stats.total_steps);
+  const completedSteps = toNumber(stats.completed_steps);
 
-    const job = jobs[0];
+  const progress =
+    totalSteps === 0 ? 0 : Math.round((completedSteps / totalSteps) * 100);
 
-    const [existingRoadmaps] = await db.query(
-      `SELECT id, title
-       FROM roadmaps
-       WHERE user_id = ? AND job_id = ?`,
-      [userId, jobId]
-    );
+  let status = "NOT_STARTED";
 
-    if (existingRoadmaps.length > 0) {
-      return res.status(409).json({
-        ok: false,
-        message: "Există deja un plan de dezvoltare generat pentru acest job.",
-        roadmap_id: existingRoadmaps[0].id
-      });
-    }
-
-    const [jobSkills] = await db.query(
-      `SELECT
-         js.skill_id,
-         s.name AS skill_name
-       FROM job_skills js
-       JOIN skills s ON js.skill_id = s.id
-       WHERE js.job_id = ?`,
-      [jobId]
-    );
-
-    if (jobSkills.length === 0) {
-      return res.status(400).json({
-        ok: false,
-        message: "Acest job nu are skill-uri asociate, deci nu se poate genera roadmap."
-      });
-    }
-
-    const [userSkills] = await db.query(
-      `SELECT skill_id
-       FROM user_skills
-       WHERE user_id = ?`,
-      [userId]
-    );
-
-    const userSkillIds = new Set(userSkills.map((s) => String(s.skill_id)));
-
-    const frequencyMap = await getSkillFrequencyMapForUser(userId);
-
-    const missingSkills = jobSkills
-      .filter((skill) => !userSkillIds.has(String(skill.skill_id)))
-      .map((skill) => ({
-        ...skill,
-        frequency: frequencyMap.get(Number(skill.skill_id)) || 0
-      }))
-      .sort((a, b) => {
-        const freqDiff = Number(b.frequency || 0) - Number(a.frequency || 0);
-        if (freqDiff !== 0) return freqDiff;
-        return String(a.skill_name).localeCompare(String(b.skill_name));
-      });
-
-    if (missingSkills.length === 0) {
-      return res.status(400).json({
-        ok: false,
-        message: "Nu există skill-uri lipsă. Nu este nevoie de roadmap."
-      });
-    }
-
-    const title = `Roadmap pentru ${job.title}`;
-    const description = `Plan personalizat de învățare generat pe baza skill-urilor lipsă pentru jobul ${job.title}.`;
-
-    const [roadmapResult] = await db.query(
-      `INSERT INTO roadmaps
-        (user_id, job_id, title, description, status, progress)
-       VALUES (?, ?, ?, ?, 'NOT_STARTED', 0)`,
-      [userId, jobId, title, description]
-    );
-
-    const roadmapId = roadmapResult.insertId;
-
-    let stepOrder = 1;
-
-    for (const skill of missingSkills) {
-      const steps = generateStepsForSkill(skill.skill_name);
-
-      for (const step of steps) {
-        await db.query(
-          `INSERT INTO roadmap_steps
-            (roadmap_id, skill_id, step_order, title, description, status)
-           VALUES (?, ?, ?, ?, ?, 'NOT_STARTED')`,
-          [
-            roadmapId,
-            skill.skill_id,
-            stepOrder,
-            step.title,
-            step.description
-          ]
-        );
-
-        stepOrder += 1;
-      }
-    }
-
-    await logActivity(userId, "ROADMAP_CREATED", "roadmap", roadmapId);
-
-    return res.status(201).json({
-      ok: true,
-      message: "Roadmap generat cu succes.",
-      roadmap_id: roadmapId,
-      missing_skills_count: missingSkills.length,
-      total_steps: stepOrder - 1
-    });
-  } catch (error) {
-    console.error("Eroare la generarea roadmap-ului:", error);
-    return res.status(500).json({
-      ok: false,
-      message: "A apărut o eroare la generarea roadmap-ului.",
-      error: error.message
-    });
+  if (progress === 100) {
+    status = "COMPLETED";
+  } else if (progress > 0) {
+    status = "IN_PROGRESS";
   }
-});
 
-/**
- * GET /api/roadmaps
- * Listează roadmap-urile userului + preview skilluri + next skill
- */
-router.get("/", authMiddleware, async (req, res) => {
+  await connection.query(
+    `UPDATE roadmaps
+     SET progress = ?, status = ?
+     WHERE id = ?`,
+    [progress, status, roadmapId]
+  );
+
+  return {
+    progress,
+    status,
+    totalSteps,
+    completedSteps
+  };
+}
+
+// GET /api/roadmaps
+router.get("/", auth, async (req, res) => {
+  const userId = req.user.userId;
+
   try {
-    const userId = req.user.userId;
-
-    const [roadmaps] = await db.query(
+    const [rows] = await db.query(
       `SELECT
-         r.*,
+         r.id,
+         r.user_id,
+         r.job_id,
+         r.title,
+         r.description,
+         r.status,
+         r.progress,
+         r.created_at,
+         r.updated_at,
          j.title AS job_title,
-         j.company,
-         j.experience_label,
-         j.degree_label,
-         j.meets_experience_requirement,
-         j.meets_degree_requirement
+         j.company AS job_company,
+         j.match_score AS job_match_score,
+         j.ml_predicted_category,
+         COUNT(rs.id) AS total_steps,
+         SUM(CASE WHEN rs.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_steps
        FROM roadmaps r
-       JOIN jobs j ON r.job_id = j.id
+       LEFT JOIN jobs j ON j.id = r.job_id
+       LEFT JOIN roadmap_steps rs ON rs.roadmap_id = r.id
        WHERE r.user_id = ?
+       GROUP BY
+         r.id,
+         r.user_id,
+         r.job_id,
+         r.title,
+         r.description,
+         r.status,
+         r.progress,
+         r.created_at,
+         r.updated_at,
+         j.title,
+         j.company,
+         j.match_score,
+         j.ml_predicted_category
        ORDER BY r.created_at DESC`,
       [userId]
     );
 
-    if (roadmaps.length === 0) {
-      return res.json({
-        ok: true,
-        roadmaps: []
+    return res.json({
+      ok: true,
+      roadmaps: rows.map((row) => ({
+        ...row,
+        progress: toNumber(row.progress),
+        total_steps: toNumber(row.total_steps),
+        completed_steps: toNumber(row.completed_steps)
+      }))
+    });
+  } catch (err) {
+    console.error("GET ROADMAPS ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Nu s-au putut încărca planurile de dezvoltare."
+    });
+  }
+});
+
+// GET /api/roadmaps/:id
+router.get("/:id", auth, async (req, res) => {
+  const userId = req.user.userId;
+  const roadmapId = Number(req.params.id);
+
+  if (!Number.isFinite(roadmapId)) {
+    return res.status(400).json({
+      ok: false,
+      error: "ID roadmap invalid."
+    });
+  }
+
+  try {
+    const [[roadmap]] = await db.query(
+      `SELECT
+         r.*,
+         j.title AS job_title,
+         j.company AS job_company,
+         j.location AS job_location,
+         j.match_score AS job_match_score,
+         j.ml_predicted_category,
+         j.ml_model,
+         j.ml_confidence
+       FROM roadmaps r
+       LEFT JOIN jobs j ON j.id = r.job_id
+       WHERE r.id = ? AND r.user_id = ?`,
+      [roadmapId, userId]
+    );
+
+    if (!roadmap) {
+      return res.status(404).json({
+        ok: false,
+        error: "Roadmap-ul nu a fost găsit."
       });
     }
-
-    const roadmapIds = roadmaps.map((r) => Number(r.id));
-    const placeholders = roadmapIds.map(() => "?").join(",");
-
-    const frequencyMap = await getSkillFrequencyMapForUser(userId);
 
     const [steps] = await db.query(
       `SELECT
@@ -349,341 +268,324 @@ router.get("/", authMiddleware, async (req, res) => {
          rs.title,
          rs.description,
          rs.status,
-         s.name AS skill_name
+         rs.created_at,
+         rs.updated_at,
+         s.name AS skill_name,
+         s.category AS skill_category
        FROM roadmap_steps rs
-       LEFT JOIN skills s ON rs.skill_id = s.id
-       WHERE rs.roadmap_id IN (${placeholders})
-       ORDER BY rs.roadmap_id ASC, rs.step_order ASC`,
-      roadmapIds
-    );
-
-    const stepsByRoadmap = new Map();
-
-    for (const step of steps) {
-      const roadmapId = Number(step.roadmap_id);
-
-      if (!stepsByRoadmap.has(roadmapId)) {
-        stepsByRoadmap.set(roadmapId, []);
-      }
-
-      stepsByRoadmap.get(roadmapId).push({
-        ...step,
-        frequency: frequencyMap.get(Number(step.skill_id)) || 0
-      });
-    }
-
-    const enrichedRoadmaps = roadmaps.map((roadmap) => {
-      const roadmapSteps = stepsByRoadmap.get(Number(roadmap.id)) || [];
-      const skillGroups = buildSkillGroupsFromSteps(roadmapSteps);
-      const skillPreview = buildSkillPreviewFromGroups(skillGroups);
-      const nextSkill = getNextSkillFromGroups(skillGroups);
-
-      return {
-        ...roadmap,
-        skill_preview: skillPreview,
-        next_skill: nextSkill
-      };
-    });
-
-    return res.json({
-      ok: true,
-      roadmaps: enrichedRoadmaps
-    });
-  } catch (error) {
-    console.error("Eroare la listarea roadmap-urilor:", error);
-    return res.status(500).json({
-      ok: false,
-      message: "A apărut o eroare la listarea roadmap-urilor.",
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/roadmaps/:id
- * Returnează roadmap + steps + skill groups ordonate
- */
-router.get("/:id", authMiddleware, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const roadmapId = Number(req.params.id);
-
-    if (!Number.isFinite(roadmapId)) {
-      return res.status(400).json({
-        ok: false,
-        message: "ID roadmap invalid."
-      });
-    }
-
-    const [roadmaps] = await db.query(
-      `SELECT
-         r.*,
-         j.title AS job_title,
-         j.company,
-         j.experience_label,
-         j.degree_label,
-         j.meets_experience_requirement,
-         j.meets_degree_requirement
-       FROM roadmaps r
-       JOIN jobs j ON r.job_id = j.id
-       WHERE r.id = ? AND r.user_id = ?`,
-      [roadmapId, userId]
-    );
-
-    if (roadmaps.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        message: "Roadmap-ul nu a fost găsit."
-      });
-    }
-
-    const frequencyMap = await getSkillFrequencyMapForUser(userId);
-
-    const [steps] = await db.query(
-      `SELECT
-         rs.*,
-         s.name AS skill_name
-       FROM roadmap_steps rs
-       LEFT JOIN skills s ON rs.skill_id = s.id
+       LEFT JOIN skills s ON s.id = rs.skill_id
        WHERE rs.roadmap_id = ?
        ORDER BY rs.step_order ASC`,
       [roadmapId]
     );
 
-    const enrichedSteps = steps.map((step) => ({
-      ...step,
-      frequency: frequencyMap.get(Number(step.skill_id)) || 0
-    }));
-
-    const skillGroups = buildSkillGroupsFromSteps(enrichedSteps);
-    const skillPreview = buildSkillPreviewFromGroups(skillGroups);
-    const nextSkill = getNextSkillFromGroups(skillGroups);
-
     return res.json({
       ok: true,
       roadmap: {
-        ...roadmaps[0],
-        skill_preview: skillPreview,
-        next_skill: nextSkill
-      },
-      steps: enrichedSteps,
-      skill_groups: skillGroups
+        ...roadmap,
+        progress: toNumber(roadmap.progress),
+        steps: steps.map((step) => ({
+          ...step,
+          estimated_days: step.skill_id ? 3 : 2
+        }))
+      }
     });
-  } catch (error) {
-    console.error("Eroare la detaliile roadmap-ului:", error);
+  } catch (err) {
+    console.error("GET ROADMAP DETAILS ERROR:", err);
     return res.status(500).json({
       ok: false,
-      message: "A apărut o eroare la încărcarea roadmap-ului.",
-      error: error.message
+      error: "Nu s-au putut încărca detaliile roadmap-ului."
     });
   }
 });
 
-/**
- * PATCH /api/roadmaps/steps/:stepId
- * Actualizează statusul unui pas și verifică dacă skill-ul asociat a fost finalizat complet
- */
-router.patch("/steps/:stepId", authMiddleware, async (req, res) => {
+// POST /api/roadmaps/generate/:jobId
+router.post("/generate/:jobId", auth, async (req, res) => {
+  const userId = req.user.userId;
+  const jobId = Number(req.params.jobId);
+
+  if (!Number.isFinite(jobId)) {
+    return res.status(400).json({
+      ok: false,
+      error: "ID job invalid."
+    });
+  }
+
+  const connection = await db.getConnection();
+
   try {
-    const userId = req.user.userId;
-    const stepId = Number(req.params.stepId);
-    const { status } = req.body;
+    const [[job]] = await connection.query(
+      `SELECT
+         id,
+         title,
+         company,
+         location,
+         match_score,
+         ml_predicted_category
+       FROM jobs
+       WHERE id = ? AND user_id = ?`,
+      [jobId, userId]
+    );
 
-    const allowedStatuses = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"];
-
-    if (!Number.isFinite(stepId)) {
-      return res.status(400).json({
+    if (!job) {
+      return res.status(404).json({
         ok: false,
-        message: "ID pas invalid."
+        error: "Jobul nu a fost găsit."
       });
     }
 
-    if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({
+    const [existingRoadmaps] = await connection.query(
+      `SELECT id
+       FROM roadmaps
+       WHERE user_id = ? AND job_id = ?
+       LIMIT 1`,
+      [userId, jobId]
+    );
+
+    if (existingRoadmaps.length > 0) {
+      return res.status(409).json({
         ok: false,
-        message: "Status invalid."
+        error: "Există deja un roadmap pentru acest job.",
+        roadmapId: existingRoadmaps[0].id
       });
     }
 
-    const [rows] = await db.query(
+    const jobSkills = await getJobSkills(jobId);
+    const userSkillIds = await getUserSkillIds(userId);
+
+    const missingSkills = jobSkills.filter(
+      (skill) => !userSkillIds.has(Number(skill.id))
+    );
+
+    const steps = buildGapBasedRoadmapSteps({
+      job,
+      missingSkills
+    });
+
+    const title = `Plan de dezvoltare pentru ${job.title}`;
+
+    const description =
+      missingSkills.length > 0
+        ? `Roadmap generat strict pe baza skillurilor lipsă detectate în cerințele jobului „${job.title}”.`
+        : `Roadmap de consolidare pentru rolul „${job.title}”, deoarece profilul tău acoperă skillurile detectate.`;
+
+    await connection.beginTransaction();
+
+    const [roadmapResult] = await connection.query(
+      `INSERT INTO roadmaps (
+         user_id,
+         job_id,
+         title,
+         description,
+         status,
+         progress
+       )
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [userId, jobId, title, description, "NOT_STARTED", 0]
+    );
+
+    const roadmapId = roadmapResult.insertId;
+
+    for (const step of steps) {
+      await connection.query(
+        `INSERT INTO roadmap_steps (
+           roadmap_id,
+           skill_id,
+           step_order,
+           title,
+           description,
+           status
+         )
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          roadmapId,
+          step.skill_id,
+          step.step_order,
+          step.title,
+          step.description,
+          STEP_STATUS.NOT_STARTED
+        ]
+      );
+    }
+
+    await connection.commit();
+
+    try {
+      await logActivity(userId, "ROADMAP_CREATED", {
+        roadmapId,
+        jobId,
+        title
+      });
+    } catch (logErr) {
+      console.warn("Activity log warning:", logErr.message);
+    }
+
+    return res.status(201).json({
+      ok: true,
+      roadmapId,
+      id: roadmapId,
+      message: "Roadmap generat cu succes."
+    });
+  } catch (err) {
+    await connection.rollback();
+
+    console.error("GENERATE ROADMAP ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Nu s-a putut genera roadmap-ul."
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// PATCH /api/roadmaps/steps/:stepId
+router.patch("/steps/:stepId", auth, async (req, res) => {
+  const userId = req.user.userId;
+  const stepId = Number(req.params.stepId);
+  const { status } = req.body;
+
+  if (!Number.isFinite(stepId)) {
+    return res.status(400).json({
+      ok: false,
+      error: "ID pas invalid."
+    });
+  }
+
+  if (!Object.values(STEP_STATUS).includes(status)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Status pas invalid."
+    });
+  }
+
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [[step]] = await connection.query(
       `SELECT
          rs.id,
          rs.roadmap_id,
-         rs.skill_id,
-         s.name AS skill_name
+         r.user_id
        FROM roadmap_steps rs
-       JOIN roadmaps r ON rs.roadmap_id = r.id
-       LEFT JOIN skills s ON rs.skill_id = s.id
+       JOIN roadmaps r ON r.id = rs.roadmap_id
        WHERE rs.id = ? AND r.user_id = ?`,
       [stepId, userId]
     );
 
-    if (rows.length === 0) {
+    if (!step) {
+      await connection.rollback();
+
       return res.status(404).json({
         ok: false,
-        message: "Pasul nu a fost găsit."
+        error: "Pasul nu a fost găsit."
       });
     }
 
-    const stepRow = rows[0];
-    const roadmapId = stepRow.roadmap_id;
-    const skillId = stepRow.skill_id;
-    const skillName = stepRow.skill_name;
-
-    await db.query(
+    await connection.query(
       `UPDATE roadmap_steps
-       SET status = ?, updated_at = CURRENT_TIMESTAMP
+       SET status = ?
        WHERE id = ?`,
       [status, stepId]
     );
 
-    const [stats] = await db.query(
-      `SELECT
-         COUNT(*) AS total_steps,
-         SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_steps
-       FROM roadmap_steps
-       WHERE roadmap_id = ?`,
-      [roadmapId]
+    const progressStats = await recalculateRoadmapProgress(
+      connection,
+      step.roadmap_id
     );
 
-    const totalSteps = Number(stats[0].total_steps || 0);
-    const completedSteps = Number(stats[0].completed_steps || 0);
+    await connection.commit();
 
-    const progress =
-      totalSteps === 0 ? 0 : Math.round((completedSteps / totalSteps) * 100);
-
-    let roadmapStatus = "NOT_STARTED";
-    if (progress > 0 && progress < 100) roadmapStatus = "IN_PROGRESS";
-    if (progress === 100) roadmapStatus = "COMPLETED";
-
-    await db.query(
-      `UPDATE roadmaps
-       SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [progress, roadmapStatus, roadmapId]
-    );
-
-    let skillCompleted = false;
-    let completedSkill = null;
-
-    if (skillId) {
-      const [sameSkillSteps] = await db.query(
-        `SELECT id, step_order, status
-         FROM roadmap_steps
-         WHERE roadmap_id = ? AND skill_id = ?
-         ORDER BY step_order ASC`,
-        [roadmapId, skillId]
-      );
-
-      const totalSkillSteps = sameSkillSteps.length;
-      const completedSkillSteps = sameSkillSteps.filter(
-        (r) => r.status === "COMPLETED"
-      ).length;
-
-      let newLevel = null;
-
-      if (completedSkillSteps === totalSkillSteps && totalSkillSteps > 0) {
-        newLevel = 2;
-        skillCompleted = true;
-      } else if (completedSkillSteps >= 1) {
-        newLevel = 1;
+    try {
+      if (status === STEP_STATUS.COMPLETED) {
+        await logActivity(userId, "ROADMAP_STEP_DONE", {
+          stepId,
+          roadmapId: step.roadmap_id
+        });
       }
-
-      if (newLevel !== null) {
-        const [existingSkill] = await db.query(
-          `SELECT skill_id, level
-           FROM user_skills
-           WHERE user_id = ? AND skill_id = ?`,
-          [userId, skillId]
-        );
-
-        if (existingSkill.length > 0) {
-          const currentLevel = Number(existingSkill[0].level);
-          if (newLevel > currentLevel) {
-            await db.query(
-              `UPDATE user_skills
-               SET level = ?, updated_at = CURRENT_TIMESTAMP
-               WHERE user_id = ? AND skill_id = ?`,
-              [newLevel, userId, skillId]
-            );
-          }
-        }
-      }
-
-      if (skillCompleted) {
-        completedSkill = {
-          skillId: Number(skillId),
-          skillName: skillName || "Skill",
-          level: 2
-        };
-      }
-    }
-
-    if (status === "COMPLETED") {
-      await logActivity(userId, "ROADMAP_STEP_DONE", "roadmap_step", stepId);
+    } catch (logErr) {
+      console.warn("Activity log warning:", logErr.message);
     }
 
     return res.json({
       ok: true,
-      message: "Pas actualizat cu succes.",
-      progress,
-      roadmap_status: roadmapStatus,
-      skillCompleted,
-      completedSkill
+      roadmapId: step.roadmap_id,
+      progress: progressStats.progress,
+      roadmapStatus: progressStats.status,
+      message: "Pas actualizat."
     });
-  } catch (error) {
-    console.error("Eroare la actualizarea pasului:", error);
+  } catch (err) {
+    await connection.rollback();
+
+    console.error("UPDATE ROADMAP STEP ERROR:", err);
     return res.status(500).json({
       ok: false,
-      message: "A apărut o eroare la actualizarea pasului.",
-      error: error.message
+      error: "Nu s-a putut actualiza pasul."
     });
+  } finally {
+    connection.release();
   }
 });
 
-/**
- * DELETE /api/roadmaps/:id
- * Șterge un roadmap și toți pașii asociați
- */
-router.delete("/:id", authMiddleware, async (req, res) => {
+// DELETE /api/roadmaps/:id
+router.delete("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
   const roadmapId = Number(req.params.id);
 
   if (!Number.isFinite(roadmapId)) {
     return res.status(400).json({
       ok: false,
-      message: "ID roadmap invalid."
+      error: "ID roadmap invalid."
     });
   }
 
+  const connection = await db.getConnection();
+
   try {
-    const [rows] = await db.query(
-      `SELECT id
-       FROM roadmaps
-       WHERE id = ? AND user_id = ?`,
+    await connection.beginTransaction();
+
+    const [[roadmap]] = await connection.query(
+      `SELECT id FROM roadmaps WHERE id = ? AND user_id = ?`,
       [roadmapId, userId]
     );
 
-    if (rows.length === 0) {
+    if (!roadmap) {
+      await connection.rollback();
+
       return res.status(404).json({
         ok: false,
-        message: "Roadmap negăsit."
+        error: "Roadmap-ul nu a fost găsit."
       });
     }
 
-    await db.query(`DELETE FROM roadmap_steps WHERE roadmap_id = ?`, [roadmapId]);
-    await db.query(`DELETE FROM roadmaps WHERE id = ?`, [roadmapId]);
+    await connection.query(
+      `DELETE FROM roadmap_steps WHERE roadmap_id = ?`,
+      [roadmapId]
+    );
+
+    await connection.query(
+      `DELETE FROM roadmaps WHERE id = ? AND user_id = ?`,
+      [roadmapId, userId]
+    );
+
+    await connection.commit();
 
     return res.json({
       ok: true,
-      message: "Roadmap șters cu succes."
+      message: "Roadmap șters."
     });
-  } catch (error) {
-    console.error("Eroare la ștergerea roadmap-ului:", error);
+  } catch (err) {
+    await connection.rollback();
+
+    console.error("DELETE ROADMAP ERROR:", err);
     return res.status(500).json({
       ok: false,
-      message: "Eroare la ștergere."
+      error: "Nu s-a putut șterge roadmap-ul."
     });
+  } finally {
+    connection.release();
   }
 });
 
