@@ -55,17 +55,40 @@ function normalizeJobs(data) {
   return [];
 }
 
+function normalizeUserSkills(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.skills)) return data.skills;
+  if (Array.isArray(data?.userSkills)) return data.userSkills;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+function getUserSkillId(skill) {
+  return Number(skill.skillId ?? skill.skill_id ?? skill.id);
+}
+
+function normalizeJobDetails(results) {
+  const map = new Map();
+
+  results.forEach((result) => {
+    if (result?.job?.id) {
+      map.set(Number(result.job.id), result.job);
+    }
+  });
+
+  return map;
+}
+
 export default function Analytics() {
   const [market, setMarket] = useState(null);
   const [profileVsMarket, setProfileVsMarket] = useState(null);
   const [jobs, setJobs] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState("");
-  const [localExplanation, setLocalExplanation] = useState(null);
+  const [jobDetailsMap, setJobDetailsMap] = useState(new Map());
+  const [userSkillIds, setUserSkillIds] = useState(new Set());
   const [mlMetrics, setMlMetrics] = useState(null);
   const [showMlDetails, setShowMlDetails] = useState(false);
 
   const [loading, setLoading] = useState(true);
-  const [loadingExplanation, setLoadingExplanation] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -77,54 +100,44 @@ export default function Analytics() {
     setMessage("");
 
     try {
-      const [marketData, profileData, jobsData, mlData] = await Promise.all([
-        apiFetch("/api/analytics/market"),
-        apiFetch("/api/analytics/profile-vs-market"),
-        apiFetch("/api/jobs"),
-        apiFetch("/api/ml/job-category/metrics").catch(() => ({ metrics: null }))
-      ]);
+      const [marketData, profileData, jobsData, userSkillsData, mlData] =
+        await Promise.all([
+          apiFetch("/api/analytics/market"),
+          apiFetch("/api/analytics/profile-vs-market"),
+          apiFetch("/api/jobs"),
+          apiFetch("/api/user-skills").catch(() => []),
+          apiFetch("/api/ml/job-category/metrics").catch(() => ({
+            metrics: null
+          }))
+        ]);
+
+      const normalizedJobs = normalizeJobs(jobsData);
+      const normalizedUserSkills = normalizeUserSkills(userSkillsData);
+
+      const detailsResults = await Promise.all(
+        normalizedJobs.map((job) =>
+          apiFetch(`/api/jobs/${job.id}`).catch(() => null)
+        )
+      );
 
       setMarket(marketData);
       setProfileVsMarket(profileData);
-      setMlMetrics(mlData.metrics || null);
-
-      const normalizedJobs = normalizeJobs(jobsData);
       setJobs(normalizedJobs);
-
-      const firstJob = normalizedJobs[0];
-
-      if (firstJob?.id) {
-        setSelectedJobId(String(firstJob.id));
-        loadLocalExplanation(firstJob.id);
-      }
+      setJobDetailsMap(normalizeJobDetails(detailsResults));
+      setUserSkillIds(
+        new Set(
+          normalizedUserSkills
+            .map((skill) => getUserSkillId(skill))
+            .filter((id) => Number.isFinite(id))
+        )
+      );
+      setMlMetrics(mlData.metrics || null);
     } catch (err) {
       console.error("ANALYTICS LOAD ERROR:", err);
       setMessage(err.message || "Nu s-au putut încărca datele analytics.");
     } finally {
       setLoading(false);
     }
-  }
-
-  async function loadLocalExplanation(jobId) {
-    if (!jobId) return;
-
-    setLoadingExplanation(true);
-
-    try {
-      const data = await apiFetch(`/api/analytics/shap/${jobId}`);
-      setLocalExplanation(data);
-    } catch (err) {
-      console.error("LOCAL EXPLANATION LOAD ERROR:", err);
-      setLocalExplanation(null);
-    } finally {
-      setLoadingExplanation(false);
-    }
-  }
-
-  function handleJobChange(event) {
-    const value = event.target.value;
-    setSelectedJobId(value);
-    loadLocalExplanation(value);
   }
 
   const compatibilityData = useMemo(() => {
@@ -139,13 +152,45 @@ export default function Analytics() {
   }, [market]);
 
   const skillImpactData = useMemo(() => {
-    return (market?.skillsImpact || []).slice(0, 10).map((skill) => ({
-      name: skill.name,
-      impact: toNumber(skill.avgGain),
-      jobsAffected: toNumber(skill.jobsAffected),
-      category: skill.category
-    }));
-  }, [market]);
+    return (market?.skillsImpact || []).slice(0, 10).map((skill) => {
+      const skillId = Number(skill.skillId ?? skill.id ?? skill.skill_id);
+
+      const impactedJobs = jobs.filter((job) => {
+        const details = jobDetailsMap.get(Number(job.id));
+        const requiredSkills = details?.skills || [];
+
+        const isRequired = requiredSkills.some((requiredSkill) => {
+          const requiredSkillId = Number(
+            requiredSkill.id ?? requiredSkill.skill_id ?? requiredSkill.skillId
+          );
+
+          if (Number.isFinite(skillId) && Number.isFinite(requiredSkillId)) {
+            return requiredSkillId === skillId;
+          }
+
+          const requiredName = String(requiredSkill.name || "").toLowerCase();
+          const skillName = String(skill.name || "").toLowerCase();
+
+          return requiredName && skillName && requiredName === skillName;
+        });
+
+        const alreadyKnown = Number.isFinite(skillId)
+          ? userSkillIds.has(skillId)
+          : false;
+
+        return isRequired && !alreadyKnown;
+      });
+
+      return {
+        skillId,
+        name: skill.name,
+        impact: toNumber(skill.avgGain),
+        jobsAffected: toNumber(skill.jobsAffected),
+        category: skill.category,
+        impactedJobs
+      };
+    });
+  }, [market, jobs, jobDetailsMap, userSkillIds]);
 
   const profileCoverageData = useMemo(() => {
     return (profileVsMarket?.categories || []).slice(0, 8).map((category) => ({
@@ -162,15 +207,6 @@ export default function Analytics() {
       .slice(0, 5);
   }, [profileVsMarket]);
 
-  const explanationData = useMemo(() => {
-    return (localExplanation?.explanations || []).slice(0, 8).map((item) => ({
-      name: item.skill,
-      gain: toNumber(item.shapValue),
-      scoreWith: toNumber(item.scoreWith),
-      category: item.category
-    }));
-  }, [localExplanation]);
-
   const testedModelsData = useMemo(() => {
     return (mlMetrics?.tested_models || []).map((model) => ({
       name: model.model,
@@ -180,8 +216,8 @@ export default function Analytics() {
     }));
   }, [mlMetrics]);
 
-  const selectedJob = jobs.find((job) => String(job.id) === selectedJobId);
   const bestModel = mlMetrics?.best_model || null;
+  const bestNextSkill = market?.bestNextSkill || null;
 
   return (
     <AppLayout
@@ -203,69 +239,22 @@ export default function Analytics() {
               <h1 style={styles.heroTitle}>Analiză profil vs piață</h1>
 
               <p style={styles.heroText}>
-                Vezi cât de bine se potrivește profilul tău cu joburile salvate,
-                ce skilluri lipsesc și ce acțiuni îți pot crește scorul mediu de
-                compatibilitate.
+                Vezi ce skilluri lipsesc cel mai des din profilul tău, ce
+                categorii sunt prioritare și unde merită să îți concentrezi
+                efortul pentru joburile salvate.
               </p>
             </div>
 
-            <div style={styles.heroScore}>
-              <span>Scor mediu</span>
-              <strong>{market?.avgScore || 0}%</strong>
-              <p>compatibilitate medie pe joburile salvate</p>
-            </div>
-          </div>
+            <div style={styles.heroRecommendation}>
+              <span>Skill recomandat </span>
 
-          <div style={styles.gridFour}>
-            <MetricCard
-              label="Joburi analizate"
-              value={market?.totalJobs || 0}
-              helper="folosite în analiza pieței"
-              accent="#378ADD"
-            />
+              <strong>{bestNextSkill?.name || "-"}</strong>
 
-            <MetricCard
-              label="Skill recomandat"
-              value={market?.bestNextSkill?.name || "-"}
-              helper={
-                market?.bestNextSkill
-                  ? `+${market.bestNextSkill.avgGain}% scor mediu`
-                  : "nu există încă date"
-              }
-              accent="#1D9E75"
-            />
-
-            <MetricCard
-              label="Skilluri cu impact"
-              value={market?.skillsImpact?.length || 0}
-              helper="skilluri lipsă care pot crește scorul"
-              accent="#7F77DD"
-            />
-
-            <MetricCard
-              label="Categorii analizate"
-              value={profileVsMarket?.categories?.length || 0}
-              helper="zone de competență comparate"
-              accent="#EF9F27"
-            />
-          </div>
-
-          <div style={styles.priorityCard}>
-            <div>
-              <div style={styles.sectionLabel}>Recomandare principală</div>
-              <h2 style={styles.priorityTitle}>
-                {market?.bestNextSkill?.name || "Nu există încă un skill prioritar"}
-              </h2>
-
-              <p style={styles.priorityText}>
-                {market?.bestNextSkill
-                  ? `Acest skill afectează ${market.bestNextSkill.jobsAffected} joburi și ar putea crește scorul mediu cu aproximativ ${market.bestNextSkill.avgGain}%.`
-                  : "Adaugă mai multe joburi și competențe pentru a primi o recomandare relevantă."}
+              <p>
+                {bestNextSkill
+                  ? `Lipsește în ${bestNextSkill.jobsAffected} joburi urmărite și poate adăuga în medie +${bestNextSkill.avgGain} puncte la scorul de potrivire.`
+                  : "Adaugă mai multe joburi salvate pentru o recomandare relevantă."}
               </p>
-            </div>
-
-            <div style={styles.priorityCircle}>
-              {market?.bestNextSkill ? `+${market.bestNextSkill.avgGain}%` : "-"}
             </div>
           </div>
 
@@ -278,14 +267,33 @@ export default function Analytics() {
                 </div>
               </div>
 
+              <p style={styles.explainText}>
+                Acoperirea arată cât din cererea de skilluri pentru o categorie
+                este deja prezentă în profilul tău. 100% înseamnă că ai toate
+                skillurile cerute în joburile salvate pentru acea categorie.
+              </p>
+
               {profileCoverageData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={340}>
+                <ResponsiveContainer width="100%" height={320}>
                   <BarChart data={profileCoverageData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tickFormatter={(value) => `${value}%`} />
-                    <ChartTooltip />
-                    <Bar dataKey="coverage" name="Acoperire" radius={[8, 8, 0, 0]}>
+                    <ChartTooltip
+                      formatter={(value, name, props) => {
+                        const payload = props?.payload || {};
+
+                        return [
+                          `${value}% (${payload.coveredRequired}/${payload.marketNeeds} skilluri)`,
+                          "Acoperire"
+                        ];
+                      }}
+                    />
+                    <Bar
+                      dataKey="coverage"
+                      name="Acoperire"
+                      radius={[8, 8, 0, 0]}
+                    >
                       {profileCoverageData.map((entry, index) => (
                         <Cell
                           key={entry.name}
@@ -319,12 +327,13 @@ export default function Analytics() {
                     <div key={category.category} style={styles.gapCard}>
                       <div style={styles.gapTop}>
                         <div>
-                          <strong>{category.category}</strong>
+                          <strong>{category.category} </strong>
                           <span>
                             {category.coveredRequired}/{category.marketNeeds}{" "}
-                            skilluri acoperite
+                             skilluri acoperite 
                           </span>
                         </div>
+
                         <b>{category.coveragePercent}%</b>
                       </div>
 
@@ -338,11 +347,13 @@ export default function Analytics() {
                       </div>
 
                       <div style={styles.skillChips}>
-                        {(category.missingSkills || []).slice(0, 5).map((skill) => (
-                          <span key={skill} style={styles.chip}>
-                            {skill}
-                          </span>
-                        ))}
+                        {(category.missingSkills || [])
+                          .slice(0, 5)
+                          .map((skill) => (
+                            <span key={skill} style={styles.chip}>
+                              {skill}
+                            </span>
+                          ))}
                       </div>
                     </div>
                   ))
@@ -364,19 +375,39 @@ export default function Analytics() {
                 </div>
               </div>
 
+              <p style={styles.explainText}>
+                Impactul este exprimat în puncte de scor, nu în procente
+                statistice. Dacă Docker are +16, înseamnă că adăugarea lui ar
+                putea crește scorul de potrivire cu aproximativ 16 puncte pentru
+                joburile în care lipsește.
+              </p>
+
               {skillImpactData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={340}>
+                <ResponsiveContainer width="100%" height={320}>
                   <BarChart data={skillImpactData} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" tickFormatter={(value) => `${value}%`} />
+                    <XAxis type="number" tickFormatter={(value) => `+${value}`} />
                     <YAxis
                       type="category"
                       dataKey="name"
                       width={120}
                       tick={{ fontSize: 12 }}
                     />
-                    <ChartTooltip />
-                    <Bar dataKey="impact" name="Impact estimat" radius={[0, 8, 8, 0]}>
+                    <ChartTooltip
+                      formatter={(value, name, props) => {
+                        const payload = props?.payload || {};
+
+                        return [
+                          `+${value} puncte · ${payload.jobsAffected} joburi`,
+                          "Impact estimat"
+                        ];
+                      }}
+                    />
+                    <Bar
+                      dataKey="impact"
+                      name="Impact estimat"
+                      radius={[0, 8, 8, 0]}
+                    >
                       {skillImpactData.map((entry, index) => (
                         <Cell
                           key={entry.name}
@@ -415,6 +446,7 @@ export default function Analytics() {
                           <Cell key={entry.key} fill={entry.fill} />
                         ))}
                       </Pie>
+
                       <ChartTooltip />
                     </PieChart>
                   </ResponsiveContainer>
@@ -428,7 +460,9 @@ export default function Analytics() {
                             background: item.fill
                           }}
                         />
+
                         <span style={styles.legendName}>{item.name}</span>
+
                         <strong>{item.total}</strong>
                       </div>
                     ))}
@@ -443,74 +477,71 @@ export default function Analytics() {
           <div style={styles.cardLarge}>
             <div style={styles.sectionHeader}>
               <div>
-                <div style={styles.sectionLabel}>Explicabilitate</div>
-                <h2 style={styles.sectionTitle}>Explicație locală pentru un job</h2>
+                <div style={styles.sectionLabel}>Detalii skill impact</div>
+                <h2 style={styles.sectionTitle}>
+                  Unde contează fiecare skill lipsă
+                </h2>
               </div>
             </div>
 
-            <p style={styles.xaiIntro}>
-              Alege un job pentru a vedea ce skilluri lipsă ar putea contribui
-              cel mai mult la creșterea scorului de potrivire.
+            <p style={styles.explainText}>
+              Lista de mai jos arată câte joburi sunt afectate de fiecare skill
+              lipsă și în ce joburi apare acel skill. Asta face recomandarea mai
+              ușor de explicat la prezentare.
             </p>
 
-            <label style={styles.selectLabel}>
-              Alege jobul analizat:
-              <select
-                value={selectedJobId}
-                onChange={handleJobChange}
-                style={styles.select}
-              >
-                {jobs.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {truncate(job.title, 42)}{" "}
-                    {job.company ? `— ${truncate(job.company, 18)}` : ""}
-                  </option>
+            {skillImpactData.length > 0 ? (
+              <div style={styles.skillImpactDetails}>
+                {skillImpactData.slice(0, 6).map((skill) => (
+                  <div
+                    key={skill.skillId || skill.name}
+                    style={styles.skillImpactCard}
+                  >
+                    <div style={styles.skillImpactTop}>
+                      <div>
+                        <strong>{skill.name} </strong>
+                        <span>{skill.category || "Categorie nespecificată"}</span>
+                      </div>
+
+                      <div style={styles.impactPill}>+{skill.impact} puncte</div>
+                    </div>
+
+                    <div style={styles.skillImpactMeta}>
+                      Lipsește în <b>{skill.jobsAffected}</b>{" "}
+                      {skill.jobsAffected === 1
+                        ? "job urmărit"
+                        : "joburi urmărite"}
+                      .
+                    </div>
+
+                    {skill.impactedJobs.length > 0 ? (
+                      <div style={styles.jobChipList}>
+                        {skill.impactedJobs.slice(0, 5).map((job) => (
+                          <span key={job.id} style={styles.jobChip}>
+                            {truncate(job.title, 32)}
+                            {job.company
+                              ? ` · ${truncate(job.company, 18)}`
+                              : ""}
+                          </span>
+                        ))}
+
+                        {skill.impactedJobs.length > 5 && (
+                          <span style={styles.jobChip}>
+                            +{skill.impactedJobs.length - 5} alte joburi
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={styles.smallText}>
+                        Joburile exacte nu sunt disponibile pentru acest skill,
+                        dar impactul agregat este calculat din joburile salvate.
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </select>
-            </label>
-
-            {loadingExplanation ? (
-              <div style={styles.muted}>Se generează explicația locală...</div>
-            ) : explanationData.length > 0 ? (
-              <>
-                <div style={styles.xaiSummary}>
-                  <strong>{selectedJob?.title || localExplanation?.jobTitle}</strong>
-                  <span>Scor curent: {localExplanation?.baseScore || 0}%</span>
-                </div>
-
-                <ResponsiveContainer width="100%" height={330}>
-                  <BarChart data={explanationData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" tickFormatter={(value) => `+${value}%`} />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      width={130}
-                      tick={{ fontSize: 12 }}
-                    />
-                    <ChartTooltip />
-                    <Bar
-                      dataKey="gain"
-                      name="Impact estimat asupra scorului"
-                      radius={[0, 8, 8, 0]}
-                    >
-                      {explanationData.map((entry, index) => (
-                        <Cell
-                          key={entry.name}
-                          fill={CHART_COLORS[index % CHART_COLORS.length]}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </>
+              </div>
             ) : (
-              <EmptyState
-                message={
-                  localExplanation?.message ||
-                  "Nu există explicații locale pentru acest job sau profilul acoperă deja cerințele detectate."
-                }
-              />
+              <EmptyState message="Nu există detalii de impact pentru skilluri." />
             )}
           </div>
 
@@ -531,6 +562,7 @@ export default function Analytics() {
                 onClick={() => setShowMlDetails((prev) => !prev)}
               >
                 {showMlDetails ? "Ascunde detaliile" : "Vezi detaliile ML"}
+
                 <span style={styles.dropdownArrow}>
                   {showMlDetails ? "↑" : "↓"}
                 </span>
@@ -611,7 +643,10 @@ export default function Analytics() {
                         {testedModelsData.length > 0 ? (
                           <ResponsiveContainer width="100%" height={310}>
                             <BarChart data={testedModelsData}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                              <CartesianGrid
+                                strokeDasharray="3 3"
+                                vertical={false}
+                              />
                               <XAxis
                                 dataKey="name"
                                 tick={{ fontSize: 11 }}
@@ -622,7 +657,9 @@ export default function Analytics() {
                               />
                               <YAxis tickFormatter={(value) => `${value * 100}%`} />
                               <ChartTooltip
-                                formatter={(value) => `${Math.round(value * 100)}%`}
+                                formatter={(value) =>
+                                  `${Math.round(value * 100)}%`
+                                }
                               />
                               <Bar
                                 dataKey="accuracy"
@@ -644,12 +681,14 @@ export default function Analytics() {
                       </div>
 
                       <div style={styles.innerCard}>
-                        <div style={styles.sectionLabel}>Interpretare rezultate</div>
+                        <div style={styles.sectionLabel}>
+                          Interpretare rezultate
+                        </div>
 
                         <div style={styles.mlExplanation}>
                           <p>
-                            Cel mai bun model este <strong>{bestModel.name}</strong>,
-                            cu accuracy de{" "}
+                            Cel mai bun model este{" "}
+                            <strong>{bestModel.name}</strong>, cu accuracy de{" "}
                             <strong>{toPercent(bestModel.accuracy)}</strong> și
                             macro F1 de{" "}
                             <strong>{toPercent(bestModel.macro_f1)}</strong>.
@@ -663,9 +702,10 @@ export default function Analytics() {
 
                           <p>
                             Împărțirea train/test folosește{" "}
-                            <strong>{mlMetrics.train_size}</strong> exemple pentru
-                            antrenare și <strong>{mlMetrics.test_size}</strong>{" "}
-                            exemple pentru testare, dintr-un total de{" "}
+                            <strong>{mlMetrics.train_size}</strong> exemple
+                            pentru antrenare și{" "}
+                            <strong>{mlMetrics.test_size}</strong> exemple
+                            pentru testare, dintr-un total de{" "}
                             <strong>{mlMetrics.dataset_size}</strong> joburi.
                           </p>
 
@@ -771,12 +811,13 @@ const styles = {
     maxWidth: 720
   },
 
-  heroScore: {
-    minWidth: 250,
+  heroRecommendation: {
+    minWidth: 290,
+    maxWidth: 330,
     borderRadius: 18,
     background: "#111827",
     color: "white",
-    padding: 22,
+    padding: 20,
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
@@ -820,46 +861,6 @@ const styles = {
     boxShadow: "0 12px 36px rgba(0,0,0,0.07)",
     border: "1px solid #e0e7ff",
     marginBottom: 16
-  },
-
-  priorityCard: {
-    marginBottom: 16,
-    padding: 24,
-    borderRadius: 20,
-    background: "#111827",
-    color: "#ffffff",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 20,
-    boxShadow: "0 16px 45px rgba(15,23,42,0.12)"
-  },
-
-  priorityTitle: {
-    margin: 0,
-    fontSize: 28,
-    letterSpacing: "-0.04em"
-  },
-
-  priorityText: {
-    margin: "10px 0 0",
-    color: "#cbd5e1",
-    lineHeight: 1.7,
-    maxWidth: 760
-  },
-
-  priorityCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: "50%",
-    background: "#dcfce7",
-    color: "#166534",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900,
-    fontSize: 22,
-    flexShrink: 0
   },
 
   innerCard: {
@@ -947,6 +948,13 @@ const styles = {
     color: "#64748b",
     fontSize: 13,
     lineHeight: 1.6
+  },
+
+  explainText: {
+    margin: "0 0 14px",
+    color: "#64748b",
+    fontSize: 13,
+    lineHeight: 1.65
   },
 
   sectionLabel: {
@@ -1108,42 +1116,57 @@ const styles = {
     fontWeight: 700
   },
 
-  xaiIntro: {
-    margin: "0 0 14px",
-    color: "#64748b",
-    lineHeight: 1.65,
-    fontSize: 13
-  },
-
-  selectLabel: {
+  skillImpactDetails: {
     display: "grid",
-    gap: 8,
-    color: "#64748b",
-    fontSize: 13,
-    fontWeight: 700,
-    marginBottom: 14
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: 12,
+    marginTop: 14
   },
 
-  select: {
-    width: "100%",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: "10px 12px",
-    background: "#ffffff",
-    color: "#111827",
-    fontSize: 14,
-    outline: "none"
+  skillImpactCard: {
+    padding: 15,
+    borderRadius: 15,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb"
   },
 
-  xaiSummary: {
+  skillImpactTop: {
     display: "flex",
     justifyContent: "space-between",
     gap: 12,
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    background: "#f8fafc",
-    marginBottom: 12
+    alignItems: "flex-start",
+    marginBottom: 10
+  },
+
+  impactPill: {
+    padding: "7px 9px",
+    borderRadius: 999,
+    background: "#ecfdf5",
+    color: "#166534",
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap"
+  },
+
+  skillImpactMeta: {
+    color: "#475569",
+    fontSize: 13,
+    marginBottom: 10
+  },
+
+  jobChipList: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6
+  },
+
+  jobChip: {
+    padding: "6px 8px",
+    borderRadius: 999,
+    background: "#eef2ff",
+    color: "#4338ca",
+    fontSize: 11,
+    fontWeight: 700
   },
 
   emptyState: {

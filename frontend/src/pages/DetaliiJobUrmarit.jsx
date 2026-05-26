@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import { apiFetch } from "../services/api";
 
@@ -39,11 +39,39 @@ const WORK_MODE_LABELS = {
   ONSITE: "On-site"
 };
 
+const WORK_MODE_OPTIONS = [
+  { value: "", label: "Nespecificat" },
+  { value: "REMOTE", label: "Remote" },
+  { value: "HYBRID", label: "Hybrid" },
+  { value: "ONSITE", label: "On-site" }
+];
+
 const EMPLOYMENT_LABELS = {
   FULL_TIME: "Full-time",
   PART_TIME: "Part-time",
   INTERNSHIP: "Internship"
 };
+
+const EMPLOYMENT_OPTIONS = [
+  { value: "", label: "Nespecificat" },
+  { value: "FULL_TIME", label: "Full-time" },
+  { value: "PART_TIME", label: "Part-time" },
+  { value: "INTERNSHIP", label: "Internship" }
+];
+
+const DEGREE_LABELS = {
+  NONE: "Nespecificat",
+  BACHELOR: "Licență",
+  MASTER: "Master",
+  PHD: "Doctorat"
+};
+
+const DEGREE_LEVEL_OPTIONS = [
+  { value: "NONE", label: "Nespecificat" },
+  { value: "BACHELOR", label: "Licență" },
+  { value: "MASTER", label: "Master" },
+  { value: "PHD", label: "Doctorat" }
+];
 
 function formatPercent(value) {
   if (value === null || value === undefined || value === "") return "-";
@@ -153,10 +181,51 @@ function getRequirementHelper(value) {
   return Number(value) === 1 || value === true ? "îndeplinit" : "neîndeplinit";
 }
 
+function getDegreeLabel(jobOrLevel) {
+  const level =
+    typeof jobOrLevel === "string"
+      ? jobOrLevel
+      : jobOrLevel?.degree_level;
+
+  if (level && DEGREE_LABELS[level]) {
+    return DEGREE_LABELS[level];
+  }
+
+  if (typeof jobOrLevel === "object" && jobOrLevel?.degree_label) {
+    return jobOrLevel.degree_label;
+  }
+
+  return "Nespecificat";
+}
+
+function buildEditForm(job) {
+  return {
+    title: job?.title || "",
+    company: job?.company || "",
+    location: job?.location || "",
+    work_mode: job?.work_mode || "",
+    employment_type: job?.employment_type || "",
+    experience_min:
+      job?.experience_min === null || job?.experience_min === undefined
+        ? ""
+        : String(job.experience_min),
+    experience_label: job?.experience_label || "",
+    degree_level: job?.degree_level || "NONE",
+    description: job?.description || ""
+  };
+}
+
+function cleanPayloadValue(value) {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : null;
+}
+
 export default function DetaliiJobUrmarit() {
   const params = useParams();
   const id = params.id || params.jobId;
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isEditMode = searchParams.get("edit") === "1";
 
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -165,6 +234,8 @@ export default function DetaliiJobUrmarit() {
   const [deleting, setDeleting] = useState(false);
   const [generatingRoadmap, setGeneratingRoadmap] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [editForm, setEditForm] = useState(buildEditForm(null));
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     fetchJob();
@@ -185,7 +256,9 @@ export default function DetaliiJobUrmarit() {
 
     try {
       const data = await apiFetch(`/api/jobs/${id}`);
-      setJob(data.job || null);
+      const loadedJob = data.job || null;
+      setJob(loadedJob);
+      setEditForm(buildEditForm(loadedJob));
     } catch (err) {
       console.error("GET JOB DETAILS ERROR:", err);
       setMessage(err.message || "Nu s-au putut încărca detaliile jobului.");
@@ -255,6 +328,79 @@ export default function DetaliiJobUrmarit() {
       }
     } finally {
       setGeneratingRoadmap(false);
+    }
+  }
+
+  function handleEditChange(field, value) {
+    setEditForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  }
+
+  function handleCancelEdit() {
+    setEditForm(buildEditForm(job));
+    setSearchParams({});
+    setMessage("");
+  }
+
+  async function handleSaveEdit(event) {
+    event.preventDefault();
+
+    if (!job) return;
+
+    const payload = {
+      title: cleanPayloadValue(editForm.title),
+      company: cleanPayloadValue(editForm.company),
+      location: cleanPayloadValue(editForm.location),
+      work_mode: editForm.work_mode || null,
+      employment_type: editForm.employment_type || null,
+      experience_min:
+        editForm.experience_min === "" || editForm.experience_min === null
+          ? null
+          : Number(editForm.experience_min),
+      experience_label: cleanPayloadValue(editForm.experience_label),
+      degree_level: editForm.degree_level || "NONE",
+      degree_label: getDegreeLabel(editForm.degree_level || "NONE"),
+      description: cleanPayloadValue(editForm.description)
+    };
+
+    if (!payload.title || !payload.description) {
+      setMessage("Titlul și descrierea jobului sunt obligatorii.");
+      return;
+    }
+
+    if (
+      payload.experience_min !== null &&
+      (!Number.isFinite(payload.experience_min) || payload.experience_min < 0)
+    ) {
+      setMessage("Experiența minimă trebuie să fie un număr valid.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setMessage("");
+
+    try {
+      const data = await apiFetch(`/api/jobs/${job.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
+
+      const updatedJob = data.job || {
+        ...job,
+        ...payload
+      };
+
+      setJob(updatedJob);
+      setEditForm(buildEditForm(updatedJob));
+      setSearchParams({});
+      setMessage("Jobul a fost actualizat cu succes.");
+    } catch (err) {
+      console.error("UPDATE JOB DETAILS ERROR:", err);
+      setMessage(err.message || "Nu s-au putut salva modificările jobului.");
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -384,6 +530,20 @@ export default function DetaliiJobUrmarit() {
 
           <button
             type="button"
+            style={styles.secondaryButton}
+            onClick={() => {
+              if (isEditMode) {
+                handleCancelEdit();
+              } else {
+                setSearchParams({ edit: "1" });
+              }
+            }}
+          >
+            {isEditMode ? "Renunță la editare" : "Editează"}
+          </button>
+
+          <button
+            type="button"
             style={styles.primaryButton}
             onClick={handleGenerateRoadmap}
             disabled={generatingRoadmap}
@@ -402,6 +562,149 @@ export default function DetaliiJobUrmarit() {
         </div>
       </div>
 
+      {isEditMode && (
+        <form style={styles.editCard} onSubmit={handleSaveEdit}>
+          <div style={styles.sectionLabel}>Editare job</div>
+          <h2 style={styles.sectionTitle}>Modifică informațiile salvate</h2>
+          <p style={styles.editHelper}>
+            Modificările se salvează în baza de date pentru acest job urmărit. Scorul și skillurile detectate rămân cele calculate la analiza inițială.
+          </p>
+
+          <div style={styles.formGridTwo}>
+            <label style={styles.formGroup}>
+              Titlu job
+              <input
+                style={styles.input}
+                value={editForm.title}
+                onChange={(event) => handleEditChange("title", event.target.value)}
+                placeholder="Ex: Graduate Software Engineer"
+              />
+            </label>
+
+            <label style={styles.formGroup}>
+              Companie
+              <input
+                style={styles.input}
+                value={editForm.company}
+                onChange={(event) => handleEditChange("company", event.target.value)}
+                placeholder="Ex: Bending Spoons"
+              />
+            </label>
+          </div>
+
+          <div style={styles.formGridThree}>
+            <label style={styles.formGroup}>
+              Locație
+              <input
+                style={styles.input}
+                value={editForm.location}
+                onChange={(event) => handleEditChange("location", event.target.value)}
+                placeholder="Ex: Cluj-Napoca"
+              />
+            </label>
+
+            <label style={styles.formGroup}>
+              Mod de lucru
+              <select
+                style={styles.input}
+                value={editForm.work_mode}
+                onChange={(event) => handleEditChange("work_mode", event.target.value)}
+              >
+                {WORK_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={styles.formGroup}>
+              Tip angajare
+              <select
+                style={styles.input}
+                value={editForm.employment_type}
+                onChange={(event) => handleEditChange("employment_type", event.target.value)}
+              >
+                {EMPLOYMENT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div style={styles.formGridThree}>
+            <label style={styles.formGroup}>
+              Experiență minimă ani
+              <input
+                style={styles.input}
+                type="number"
+                min="0"
+                step="1"
+                value={editForm.experience_min}
+                onChange={(event) => handleEditChange("experience_min", event.target.value)}
+                placeholder="Ex: 0"
+              />
+            </label>
+
+            <label style={styles.formGroup}>
+              Etichetă experiență
+              <input
+                style={styles.input}
+                value={editForm.experience_label}
+                onChange={(event) => handleEditChange("experience_label", event.target.value)}
+                placeholder="Ex: Entry-level / Graduate"
+              />
+            </label>
+
+            <label style={styles.formGroup}>
+              Nivel studii
+              <select
+                style={styles.input}
+                value={editForm.degree_level}
+                onChange={(event) => handleEditChange("degree_level", event.target.value)}
+              >
+                {DEGREE_LEVEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label style={styles.formGroup}>
+            Descriere job
+            <textarea
+              style={styles.textarea}
+              value={editForm.description}
+              onChange={(event) => handleEditChange("description", event.target.value)}
+              placeholder="Textul jobului salvat"
+            />
+          </label>
+
+          <div style={styles.editActions}>
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={handleCancelEdit}
+              disabled={savingEdit}
+            >
+              Anulează
+            </button>
+
+            <button
+              type="submit"
+              style={styles.primaryButton}
+              disabled={savingEdit}
+            >
+              {savingEdit ? "Se salvează..." : "Salvează modificările"}
+            </button>
+          </div>
+        </form>
+      )}
+
       <div style={styles.heroCard}>
         <div>
           <div style={styles.eyebrow}>Job urmărit</div>
@@ -414,7 +717,7 @@ export default function DetaliiJobUrmarit() {
         </div>
 
         <div style={styles.scorePanel}>
-          <span>Scor potrivire</span>
+          <span>Scor potrivire </span>
           <strong>{formatScore(job.match_score)}</strong>
           <p>{buildScoreExplanation(job)}</p>
         </div>
@@ -454,7 +757,7 @@ export default function DetaliiJobUrmarit() {
 
         <InfoCard
           label="Studii cerute"
-          value={job.degree_label || "-"}
+          value={getDegreeLabel(job)}
           helper={getRequirementHelper(job.meets_degree_requirement)}
         />
 
@@ -1159,6 +1462,80 @@ const styles = {
     cursor: "pointer",
     fontWeight: 700,
     textAlign: "left"
+  },
+
+  editCard: {
+    background: "#ffffff",
+    borderRadius: 18,
+    padding: 20,
+    border: "1px solid #dbeafe",
+    boxShadow: "0 16px 45px rgba(15,23,42,0.08)",
+    marginBottom: 16
+  },
+
+  editHelper: {
+    margin: "8px 0 16px",
+    color: "#64748b",
+    lineHeight: 1.6,
+    fontSize: 13
+  },
+
+  formGridTwo: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 12,
+    marginBottom: 12
+  },
+
+  formGridThree: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 12,
+    marginBottom: 12
+  },
+
+  formGroup: {
+    display: "grid",
+    gap: 7,
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: 800
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #d1d5db",
+    borderRadius: 12,
+    padding: "11px 12px",
+    background: "#ffffff",
+    color: "#111827",
+    outline: "none",
+    fontSize: 14,
+    fontWeight: 600
+  },
+
+  textarea: {
+    width: "100%",
+    minHeight: 220,
+    boxSizing: "border-box",
+    border: "1px solid #d1d5db",
+    borderRadius: 12,
+    padding: "12px",
+    background: "#ffffff",
+    color: "#111827",
+    outline: "none",
+    fontSize: 14,
+    lineHeight: 1.6,
+    resize: "vertical"
+  },
+
+  editActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 14,
+    flexWrap: "wrap"
   },
 
   primaryButton: {

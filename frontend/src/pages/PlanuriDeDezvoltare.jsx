@@ -155,6 +155,18 @@ function getPreviewStatusStyle(status) {
   return styles.previewStatusNotStarted;
 }
 
+function getStepStatusStyle(status) {
+  if (status === "COMPLETED") return styles.statusButtonCompleted;
+  if (status === "IN_PROGRESS") return styles.statusButtonInProgress;
+  return styles.statusButtonNotStarted;
+}
+
+function getStepStatusActiveStyle(status) {
+  if (status === "COMPLETED") return styles.statusButtonActiveCompleted;
+  if (status === "IN_PROGRESS") return styles.statusButtonActiveInProgress;
+  return styles.statusButtonActiveNotStarted;
+}
+
 export default function PlanuriDeDezvoltare() {
   const [jobs, setJobs] = useState([]);
   const [roadmaps, setRoadmaps] = useState([]);
@@ -440,6 +452,16 @@ export default function PlanuriDeDezvoltare() {
     }
   }
 
+  const jobsWithoutRoadmap = useMemo(() => {
+    const jobIdsWithRoadmap = new Set(
+      roadmaps
+        .map((roadmap) => Number(roadmap.job_id))
+        .filter((id) => Number.isFinite(id)),
+    );
+
+    return jobs.filter((job) => !jobIdsWithRoadmap.has(Number(job.id)));
+  }, [jobs, roadmaps]);
+
   const selectedJob = useMemo(() => {
     return jobs.find((job) => String(job.id) === String(selectedJobId));
   }, [jobs, selectedJobId]);
@@ -515,6 +537,7 @@ export default function PlanuriDeDezvoltare() {
             }
           />
         )}
+
         {loading ? (
           <div style={styles.card}>
             <div style={styles.muted}>Se încarcă planurile...</div>
@@ -538,7 +561,7 @@ export default function PlanuriDeDezvoltare() {
 
               <div style={styles.heroStatsPanel}>
                 <div style={styles.mainRoadmapStat}>
-                  <span>Learning plan-uri</span>
+                  <span>Planuri de dezvoltare</span>
                   <strong>{roadmaps.length}</strong>
                 </div>
 
@@ -645,120 +668,7 @@ export default function PlanuriDeDezvoltare() {
               )}
             </section>
 
-            <section style={styles.card}>
-              <div style={styles.dropdownHeader}>
-                <div>
-                  <div style={styles.sectionLabel}>Alege job salvat</div>
-
-                  <h2 style={styles.sectionTitle}>
-                    Generează un learning plan
-                  </h2>
-
-                  <p style={styles.smallText}>
-                    Deschide joburile salvate și alege pentru care vrei să
-                    creezi un plan de dezvoltare.
-                  </p>
-                </div>
-
-                <div style={styles.dropdownActions}>
-                  <span style={styles.countPill}>
-                    {jobs.length} {jobs.length === 1 ? "job" : "joburi"}
-                  </span>
-
-                  <button
-                    type="button"
-                    style={styles.dropdownButton}
-                    onClick={() => setShowSavedJobs((prev) => !prev)}
-                  >
-                    {showSavedJobs ? "Închide joburile" : "Deschide joburile"}
-                    <span style={styles.dropdownArrow}>
-                      {showSavedJobs ? "↑" : "↓"}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {showSavedJobs && (
-                <>
-                  {jobs.length > 0 ? (
-                    <div style={styles.savedJobsGrid}>
-                      {jobs.map((job) => {
-                        const isSelected =
-                          String(selectedJobId) === String(job.id);
-
-                        const scoreTone = getScoreTone(job.match_score);
-
-                        return (
-                          <article
-                            key={job.id}
-                            style={{
-                              ...styles.savedJobCard,
-                              ...(isSelected ? styles.savedJobCardActive : {}),
-                            }}
-                            onClick={() => setSelectedJobId(String(job.id))}
-                          >
-                            <div style={styles.savedJobTop}>
-                              <div style={styles.savedJobTitleWrap}>
-                                <strong>{job.title}</strong>
-
-                                <span>
-                                  {job.company || "Companie necunoscută"} ·{" "}
-                                  {job.location || "Locație nespecificată"}
-                                </span>
-                              </div>
-
-                              <div
-                                style={{
-                                  ...styles.savedJobScore,
-                                  ...scoreTone,
-                                }}
-                              >
-                                {job.match_score ?? 0}%
-                              </div>
-                            </div>
-
-                            <div style={styles.savedJobMeta}>
-                              <span>{job.work_mode || "Mod nespecificat"}</span>
-                              <span>
-                                {job.employment_type || "Tip nespecificat"}
-                              </span>
-                              <span>
-                                ML: {job.ml_predicted_category || "N/A"}
-                              </span>
-                            </div>
-
-                            <div style={styles.savedJobFooter}>
-                              <span>
-                                {isSelected
-                                  ? "Job selectat pentru learning plan"
-                                  : "Selectează jobul sau generează direct"}
-                              </span>
-
-                              <button
-                                type="button"
-                                style={styles.smallGenerateButton}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setSelectedJobId(String(job.id));
-                                  handleGenerateRoadmap(job.id);
-                                }}
-                                disabled={generatingJobId === job.id}
-                              >
-                                {generatingJobId === job.id
-                                  ? "Se generează..."
-                                  : "Generează learning plan"}
-                              </button>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <EmptyState message="Nu ai încă joburi salvate. Analizează și salvează un job înainte să generezi un learning plan." />
-                  )}
-                </>
-              )}
-            </section>
+      
 
             <section style={styles.card}>
               <div style={styles.dropdownHeader}>
@@ -874,161 +784,245 @@ export default function PlanuriDeDezvoltare() {
               )}
             </section>
 
-            <section id="roadmap-steps" style={styles.card}>
+             <section style={styles.card}>
               <div style={styles.dropdownHeader}>
                 <div>
-                  <div style={styles.sectionLabel}>Plan de dezvoltare</div>
+                  <div style={styles.sectionLabel}>Alege job salvat</div>
 
                   <h2 style={styles.sectionTitle}>
-                    {selectedRoadmap?.title || "Niciun roadmap selectat"}
+                    Generează un learning plan
                   </h2>
 
                   <p style={styles.smallText}>
-                    Deschide planul pentru a vedea pașii concreți și a actualiza
-                    progresul fiecărei etape.
+                    Apar doar joburile pentru care nu există deja un learning
+                    plan.
                   </p>
                 </div>
 
                 <div style={styles.dropdownActions}>
                   <span style={styles.countPill}>
-                    {visibleSteps.length}{" "}
-                    {visibleSteps.length === 1
-                      ? "pas vizibil"
-                      : "pași vizibili"}
+                    {jobsWithoutRoadmap.length}{" "}
+                    {jobsWithoutRoadmap.length === 1 ? "job" : "joburi"}
                   </span>
 
                   <button
                     type="button"
                     style={styles.dropdownButton}
-                    onClick={() => setShowPlanSteps((prev) => !prev)}
-                    disabled={!selectedRoadmap}
+                    onClick={() => setShowSavedJobs((prev) => !prev)}
                   >
-                    {showPlanSteps ? "Închide planul" : "Deschide planul"}
+                    {showSavedJobs ? "Închide joburile" : "Deschide joburile"}
                     <span style={styles.dropdownArrow}>
-                      {showPlanSteps ? "↑" : "↓"}
+                      {showSavedJobs ? "↑" : "↓"}
                     </span>
                   </button>
                 </div>
               </div>
 
-              {showPlanSteps && (
+              {showSavedJobs && (
                 <>
-                  {validatedSkills.length > 0 && (
-                    <div style={styles.validatedSkillsBox}>
-                      <div style={styles.validatedSkillsHeader}>
-                        <span>Skilluri validate și adăugate în profil</span>
-                        <strong>{validatedSkills.length}</strong>
-                      </div>
+                  {jobsWithoutRoadmap.length > 0 ? (
+                    <div style={styles.savedJobsGrid}>
+                      {jobsWithoutRoadmap.map((job) => {
+                        const isSelected =
+                          String(selectedJobId) === String(job.id);
 
-                      <div style={styles.validatedSkillsList}>
-                        {validatedSkills.map((skill) => (
-                          <span
-                            key={skill.id}
-                            style={styles.validatedSkillChip}
+                        const scoreTone = getScoreTone(job.match_score);
+
+                        return (
+                          <article
+                            key={job.id}
+                            style={{
+                              ...styles.savedJobCard,
+                              ...(isSelected ? styles.savedJobCardActive : {}),
+                            }}
+                            onClick={() => setSelectedJobId(String(job.id))}
                           >
-                            ✓ {skill.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                            <div style={styles.savedJobTop}>
+                              <div style={styles.savedJobTitleWrap}>
+                                <strong>{job.title}</strong>
 
-                  {loadingDetails ? (
-                    <div style={styles.muted}>Se încarcă detaliile...</div>
-                  ) : visibleSteps.length > 0 ? (
-                    <div style={styles.stepsList}>
-                      {visibleSteps.map((step) => (
-                        <article key={step.id} style={styles.stepCard}>
-                          <div style={styles.stepNumber}>{step.step_order}</div>
-
-                          <div style={styles.stepContent}>
-                            <div style={styles.stepHeader}>
-                              <div>
-                                <h3 style={styles.stepTitle}>{step.title}</h3>
-
-                                <div style={styles.stepMeta}>
-                                  {getStepMeta(step)}
-                                </div>
+                                <span>
+                                  {job.company || "Companie necunoscută"} ·{" "}
+                                  {job.location || "Locație nespecificată"}
+                                </span>
                               </div>
 
-                              <div style={styles.statusButtonGroup}>
-                                {STEP_STATUS_OPTIONS.map((option) => {
-                                  const isActive = step.status === option.value;
-
-                                  return (
-                                    <button
-                                      key={option.value}
-                                      type="button"
-                                      disabled={updatingStepId === step.id}
-                                      onClick={() =>
-                                        handleStepStatusChange(
-                                          step.id,
-                                          option.value,
-                                        )
-                                      }
-                                      style={{
-                                        ...styles.statusButton,
-                                        ...(option.value === "NOT_STARTED"
-                                          ? styles.statusButtonNotStarted
-                                          : {}),
-                                        ...(option.value === "IN_PROGRESS"
-                                          ? styles.statusButtonInProgress
-                                          : {}),
-                                        ...(option.value === "COMPLETED"
-                                          ? styles.statusButtonCompleted
-                                          : {}),
-                                        ...(isActive
-                                          ? styles.statusButtonActive
-                                          : {}),
-                                        ...(isActive &&
-                                        option.value === "NOT_STARTED"
-                                          ? styles.statusButtonActiveNotStarted
-                                          : {}),
-                                        ...(isActive &&
-                                        option.value === "IN_PROGRESS"
-                                          ? styles.statusButtonActiveInProgress
-                                          : {}),
-                                        ...(isActive &&
-                                        option.value === "COMPLETED"
-                                          ? styles.statusButtonActiveCompleted
-                                          : {}),
-                                        opacity:
-                                          updatingStepId === step.id ? 0.65 : 1,
-                                      }}
-                                    >
-                                      {option.label}
-                                    </button>
-                                  );
-                                })}
+                              <div
+                                style={{
+                                  ...styles.savedJobScore,
+                                  ...scoreTone,
+                                }}
+                              >
+                                {job.match_score ?? 0}%
                               </div>
                             </div>
 
-                            <p style={styles.stepDescription}>
-                              {step.description}
-                            </p>
+                            <div style={styles.savedJobMeta}>
+                              <span>{job.work_mode || "Mod nespecificat"}</span>
+                              <span>
+                                {job.employment_type || "Tip nespecificat"}
+                              </span>
+                              <span>
+                                ML: {job.ml_predicted_category || "N/A"}
+                              </span>
+                            </div>
 
-                            {step.status === "COMPLETED" &&
-                              step.skill_id &&
-                              isValidationStep(step) &&
-                              !profileSkillIds.has(Number(step.skill_id)) && (
-                                <button
-                                  type="button"
-                                  style={styles.smallAddButton}
-                                  onClick={() => setCompletedSkillPrompt(step)}
-                                >
-                                  Adaugă skill ca nivel fundamental
-                                </button>
-                              )}
-                          </div>
-                        </article>
-                      ))}
+                            <div style={styles.savedJobFooter}>
+                              <span>
+                                {isSelected
+                                  ? "Job selectat pentru learning plan"
+                                  : "Selectează jobul sau generează direct"}
+                              </span>
+
+                              <button
+                                type="button"
+                                style={styles.smallGenerateButton}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedJobId(String(job.id));
+                                  handleGenerateRoadmap(job.id);
+                                }}
+                                disabled={generatingJobId === job.id}
+                              >
+                                {generatingJobId === job.id
+                                  ? "Se generează..."
+                                  : "Generează learning plan"}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
                     </div>
                   ) : (
-                    <EmptyState message="Toate skillurile validate au fost adăugate în profil. Poți continua cu alt roadmap sau genera unul nou." />
+                    <EmptyState message="Nu există joburi disponibile pentru un learning plan nou." />
                   )}
                 </>
               )}
             </section>
+            {selectedRoadmap && showPlanSteps && (
+              <section id="roadmap-steps" style={styles.card}>
+                <div style={styles.dropdownHeader}>
+                  <div>
+                    <div style={styles.sectionLabel}>Pași roadmap</div>
+
+                    <h2 style={styles.sectionTitle}>
+                      Continuă learning plan-ul activ
+                    </h2>
+
+                    <p style={styles.smallText}>
+                      Actualizează statusul fiecărui pas pe măsură ce înveți și
+                      validezi competențele recomandate.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() => setShowPlanSteps(false)}
+                  >
+                    Ascunde pașii
+                  </button>
+                </div>
+
+                {validatedSkills.length > 0 && (
+                  <div style={styles.validatedSkillsBox}>
+                    <div style={styles.validatedSkillsHeader}>
+                      Skilluri validate și adăugate în profil
+                    </div>
+
+                    <div style={styles.validatedSkillsList}>
+                      {validatedSkills.map((skill) => (
+                        <span key={skill.id} style={styles.validatedSkillChip}>
+                          {skill.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {loadingDetails ? (
+                  <div style={styles.muted}>Se încarcă pașii...</div>
+                ) : visibleSteps.length > 0 ? (
+                  <div style={styles.stepsList}>
+                    {visibleSteps.map((step, index) => (
+                      <article key={step.id} style={styles.stepCard}>
+                        <div style={styles.stepNumber}>{index + 1}</div>
+
+                        <div style={styles.stepContent}>
+                          <div style={styles.stepHeader}>
+                            <div>
+                              <h3 style={styles.stepTitle}>{step.title}</h3>
+                              <div style={styles.stepMeta}>
+                                {getStepMeta(step)}
+                              </div>
+                            </div>
+
+                            <div style={styles.statusButtonGroup}>
+                              {STEP_STATUS_OPTIONS.map((option) => {
+                                const isActive = step.status === option.value;
+
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    style={{
+                                      ...styles.statusButton,
+                                      ...getStepStatusStyle(option.value),
+                                      ...(isActive
+                                        ? {
+                                            ...styles.statusButtonActive,
+                                            ...getStepStatusActiveStyle(
+                                              option.value,
+                                            ),
+                                          }
+                                        : {}),
+                                    }}
+                                    disabled={updatingStepId === step.id}
+                                    onClick={() =>
+                                      handleStepStatusChange(
+                                        step.id,
+                                        option.value,
+                                      )
+                                    }
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <p style={styles.stepDescription}>
+                            {step.description ||
+                              "Parcurge această etapă pentru a consolida skillul recomandat."}
+                          </p>
+
+                          {step.status === "COMPLETED" &&
+                            isValidationStep(step) &&
+                            step.skill_id &&
+                            !profileSkillIds.has(Number(step.skill_id)) && (
+                              <button
+                                type="button"
+                                style={styles.smallAddButton}
+                                onClick={() =>
+                                  handleAddCompletedSkillToProfile(step)
+                                }
+                                disabled={addingSkillId === step.skill_id}
+                              >
+                                {addingSkillId === step.skill_id
+                                  ? "Se adaugă..."
+                                  : "Adaugă skillul în profil"}
+                              </button>
+                            )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState message="Toți pașii vizibili sunt finalizați sau validați în profil." />
+                )}
+              </section>
+            )}
           </>
         )}
 
@@ -1208,14 +1202,17 @@ const styles = {
   },
 
   mainRoadmapStat: {
-    minHeight: 130,
-    borderRadius: 22,
+    minHeight: 90,
+    borderRadius: 16,
     background: "#111827",
     color: "#ffffff",
-    padding: 20,
+    padding: 14,
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
+    alignItems: "center",
+    textAlign: "center",
+    gap: 4,
   },
 
   smallRoadmapStats: {

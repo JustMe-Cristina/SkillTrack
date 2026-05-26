@@ -14,7 +14,7 @@ const CATEGORY_LABELS = {
   BACKEND: "Backend",
   FULLSTACK: "Full Stack",
   QA: "QA",
-  AI_ML: "AI / ML"
+  AI_ML: "AI / ML",
 };
 
 const STATUS_LABELS = {
@@ -23,7 +23,7 @@ const STATUS_LABELS = {
   INTERVIU: "Interviu",
   OFERTA: "Ofertă",
   RESPINS: "Respins",
-  FARA_RASPUNS: "Fără răspuns"
+  FARA_RASPUNS: "Fără răspuns",
 };
 
 const MONTH_LABELS = [
@@ -38,7 +38,7 @@ const MONTH_LABELS = [
   "Sep",
   "Oct",
   "Nov",
-  "Dec"
+  "Dec",
 ];
 
 function normalizeArray(data, keys = []) {
@@ -56,7 +56,9 @@ function average(numbers) {
 
   if (valid.length === 0) return 0;
 
-  return Math.round(valid.reduce((sum, value) => sum + value, 0) / valid.length);
+  return Math.round(
+    valid.reduce((sum, value) => sum + value, 0) / valid.length,
+  );
 }
 
 function formatDate(value) {
@@ -65,7 +67,7 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString("ro-RO", {
     day: "numeric",
     month: "long",
-    year: "numeric"
+    year: "numeric",
   });
 }
 
@@ -125,7 +127,7 @@ function buildActivityMatrix(jobs, roadmaps) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const totalDays = 98;
+  const totalDays = 70;
   const days = [];
 
   for (let i = totalDays - 1; i >= 0; i -= 1) {
@@ -136,7 +138,7 @@ function buildActivityMatrix(jobs, roadmaps) {
       date,
       key: getDateKey(date),
       count: 0,
-      activities: []
+      activities: [],
     });
   }
 
@@ -144,13 +146,13 @@ function buildActivityMatrix(jobs, roadmaps) {
     ...jobs.map((job) => ({
       date: getJobDate(job),
       label: `Job salvat/actualizat: ${job.title || "Job fără titlu"}`,
-      type: "Job"
+      type: "Job",
     })),
     ...roadmaps.map((roadmap) => ({
       date: getRoadmapDate(roadmap),
       label: `Plan actualizat: ${roadmap.title || "Plan de dezvoltare"}`,
-      type: "Plan"
-    }))
+      type: "Plan",
+    })),
   ];
 
   activitySources.forEach((activity) => {
@@ -219,7 +221,7 @@ function getActivityStyle(count) {
 function getRoadmapNextStep(roadmaps) {
   const active = roadmaps.find(
     (roadmap) =>
-      roadmap.status !== "COMPLETED" && Number(roadmap.progress || 0) < 100
+      roadmap.status !== "COMPLETED" && Number(roadmap.progress || 0) < 100,
   );
 
   if (active) {
@@ -227,7 +229,7 @@ function getRoadmapNextStep(roadmaps) {
       label: "Continuă planul",
       title: active.title || "Plan de dezvoltare",
       helper: `${active.progress || 0}% progres`,
-      route: "/roadmaps"
+      route: "/roadmaps",
     };
   }
 
@@ -236,7 +238,7 @@ function getRoadmapNextStep(roadmaps) {
       label: "Revizuiește progresul",
       title: "Ai planuri finalizate",
       helper: "Poți genera un plan nou pentru alt job.",
-      route: "/roadmaps"
+      route: "/roadmaps",
     };
   }
 
@@ -244,7 +246,7 @@ function getRoadmapNextStep(roadmaps) {
     label: "Începe dezvoltarea",
     title: "Generează primul plan de dezvoltare",
     helper: "Alege un job salvat și transformă competențele lipsă în pași.",
-    route: "/roadmaps"
+    route: "/roadmaps",
   };
 }
 
@@ -269,20 +271,20 @@ function getScoreTone(score) {
   if (value >= 75) {
     return {
       background: "#dcfce7",
-      color: "#166534"
+      color: "#166534",
     };
   }
 
   if (value >= 45) {
     return {
       background: "#fef3c7",
-      color: "#92400e"
+      color: "#92400e",
     };
   }
 
   return {
     background: "#fee2e2",
-    color: "#991b1b"
+    color: "#991b1b",
   };
 }
 
@@ -309,6 +311,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [hoveredDay, setHoveredDay] = useState(null);
+  const [hoveredStat, setHoveredStat] = useState(null);
   const [animatedScore, setAnimatedScore] = useState(0);
 
   useEffect(() => {
@@ -320,18 +323,19 @@ export default function Dashboard() {
     setMessage("");
 
     try {
-      const [jobsData, roadmapsData, skillsData, marketData] = await Promise.all(
-        [
+      const [jobsData, roadmapsData, skillsData, marketData] =
+        await Promise.all([
           apiFetch("/api/jobs").catch(() => null),
           apiFetch("/api/roadmaps").catch(() => null),
           apiFetch("/api/user-skills").catch(() => null),
-          apiFetch("/api/analytics/market").catch(() => null)
-        ]
-      );
+          apiFetch("/api/analytics/market").catch(() => null),
+        ]);
 
       setJobs(normalizeArray(jobsData, ["jobs", "data"]));
       setRoadmaps(normalizeArray(roadmapsData, ["roadmaps", "data"]));
-      setUserSkills(normalizeArray(skillsData, ["skills", "userSkills", "data"]));
+      setUserSkills(
+        normalizeArray(skillsData, ["skills", "userSkills", "data"]),
+      );
       setMarket(marketData);
     } catch (err) {
       console.error("LOAD DASHBOARD ERROR:", err);
@@ -350,25 +354,25 @@ export default function Dashboard() {
 
     const bestMatch =
       [...jobs].sort(
-        (a, b) => Number(b.match_score || 0) - Number(a.match_score || 0)
+        (a, b) => Number(b.match_score || 0) - Number(a.match_score || 0),
       )[0] || null;
 
     const activeRoadmaps = roadmaps.filter(
       (roadmap) =>
-        roadmap.status !== "COMPLETED" && Number(roadmap.progress || 0) < 100
+        roadmap.status !== "COMPLETED" && Number(roadmap.progress || 0) < 100,
     );
 
     const completedRoadmaps = roadmaps.filter(
       (roadmap) =>
-        roadmap.status === "COMPLETED" || Number(roadmap.progress || 0) === 100
+        roadmap.status === "COMPLETED" || Number(roadmap.progress || 0) === 100,
     );
 
     const avgRoadmapProgress = average(
-      roadmaps.map((roadmap) => roadmap.progress)
+      roadmaps.map((roadmap) => roadmap.progress),
     );
 
     const newSkillsThisMonth = userSkills.filter((skill) =>
-      isCurrentMonth(skill.updated_at || skill.created_at)
+      isCurrentMonth(skill.updated_at || skill.created_at),
     ).length;
 
     return {
@@ -378,7 +382,7 @@ export default function Dashboard() {
       completedRoadmaps,
       avgRoadmapProgress,
       streak: calculateStreak(activity.days),
-      newSkillsThisMonth
+      newSkillsThisMonth,
     };
   }, [jobs, roadmaps, userSkills, activity.days]);
 
@@ -413,7 +417,7 @@ export default function Dashboard() {
       .map(([category, total]) => ({
         category,
         label: CATEGORY_LABELS[category] || category,
-        total
+        total,
       }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
@@ -426,7 +430,7 @@ export default function Dashboard() {
       subtitle: job.company || "Companie necunoscută",
       date: getJobDate(job),
       route: `/joburi-urmarite/${job.id}`,
-      badge: `${job.match_score || 0}%`
+      badge: `${job.match_score || 0}%`,
     }));
 
     const roadmapItems = roadmaps.map((roadmap) => ({
@@ -435,7 +439,7 @@ export default function Dashboard() {
       subtitle: `${roadmap.progress || 0}% progres`,
       date: getRoadmapDate(roadmap),
       route: "/roadmaps",
-      badge: roadmap.status === "COMPLETED" ? "Finalizat" : "Activ"
+      badge: roadmap.status === "COMPLETED" ? "Finalizat" : "Activ",
     }));
 
     return [...jobItems, ...roadmapItems]
@@ -443,6 +447,33 @@ export default function Dashboard() {
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, 4);
   }, [jobs, roadmaps]);
+
+  const statCards = [
+    {
+      label: "Joburi urmărite",
+      value: jobs.length,
+      helper: "salvate după analiză",
+      route: "/joburi-urmarite",
+    },
+    {
+      label: "Progres planuri",
+      value: `${stats.avgRoadmapProgress}%`,
+      helper: `${stats.completedRoadmaps.length} finalizate`,
+      route: "/roadmaps",
+    },
+    {
+      label: "Planuri active",
+      value: stats.activeRoadmaps.length,
+      helper: "în dezvoltare",
+      route: "/roadmaps",
+    },
+    {
+      label: "Competențe noi",
+      value: stats.newSkillsThisMonth,
+      helper: "adăugate luna aceasta",
+      route: "/competentele-mele",
+    },
+  ];
 
   return (
     <AppLayout
@@ -456,10 +487,9 @@ export default function Dashboard() {
               weekday: "long",
               day: "numeric",
               month: "long",
-              year: "numeric"
+              year: "numeric",
             })}
           </div>
-
         </div>
 
         {message && <MesajFeedback message={message} type="error" />}
@@ -507,7 +537,7 @@ export default function Dashboard() {
                     ...styles.circularScore,
                     background: `conic-gradient(#4f46e5 ${
                       animatedScore * 3.6
-                    }deg, #e5e7eb 0deg)`
+                    }deg, #e5e7eb 0deg)`,
                   }}
                 >
                   <div style={styles.circularScoreInner}>
@@ -524,29 +554,18 @@ export default function Dashboard() {
             </section>
 
             <section style={styles.quickStats}>
-              <StatCard
-                label="Joburi urmărite"
-                value={jobs.length}
-                helper="salvate după analiză"
-              />
-
-              <StatCard
-                label="Progres planuri"
-                value={`${stats.avgRoadmapProgress}%`}
-                helper={`${stats.completedRoadmaps.length} finalizate`}
-              />
-
-              <StatCard
-                label="Planuri active"
-                value={stats.activeRoadmaps.length}
-                helper="în dezvoltare"
-              />
-
-              <StatCard
-                label="Competențe noi"
-                value={stats.newSkillsThisMonth}
-                helper="adăugate luna aceasta"
-              />
+              {statCards.map((stat) => (
+                <StatCard
+                  key={stat.label}
+                  label={stat.label}
+                  value={stat.value}
+                  helper={stat.helper}
+                  isHovered={hoveredStat === stat.label}
+                  onMouseEnter={() => setHoveredStat(stat.label)}
+                  onMouseLeave={() => setHoveredStat(null)}
+                  onClick={() => navigate(stat.route)}
+                />
+              ))}
             </section>
 
             <section style={styles.dashboardGrid}>
@@ -563,13 +582,6 @@ export default function Dashboard() {
                   </div>
 
                   <div style={styles.heatmapOuter}>
-                    <div style={styles.monthLabels}>
-                      <div />
-                      {activity.monthMarkers.map((month, index) => (
-                        <span key={`${month}-${index}`}>{month}</span>
-                      ))}
-                    </div>
-
                     <div style={styles.githubWrap}>
                       <div style={styles.weekdayLabels}>
                         <span>L</span>
@@ -594,7 +606,7 @@ export default function Dashboard() {
                                 <div
                                   style={{
                                     ...styles.githubCell,
-                                    ...getActivityStyle(day.count)
+                                    ...getActivityStyle(day.count),
                                   }}
                                 />
 
@@ -648,7 +660,10 @@ export default function Dashboard() {
                         style={{ ...styles.legendDot, ...styles.activityLow }}
                       />
                       <span
-                        style={{ ...styles.legendDot, ...styles.activityMedium }}
+                        style={{
+                          ...styles.legendDot,
+                          ...styles.activityMedium,
+                        }}
                       />
                       <span
                         style={{ ...styles.legendDot, ...styles.activityHigh }}
@@ -656,65 +671,13 @@ export default function Dashboard() {
                       <span
                         style={{
                           ...styles.legendDot,
-                          ...styles.activityVeryHigh
+                          ...styles.activityVeryHigh,
                         }}
                       />
                       <span>Mai mult</span>
                     </div>
                   </div>
                 </section>
-
-                <section style={styles.focusCard}>
-                  <div>
-                    <div style={styles.sectionLabelLight}>Următoarea acțiune</div>
-                    <h3 style={styles.focusTitle}>{nextAction.title}</h3>
-                    <p style={styles.focusText}>{nextAction.helper}</p>
-                  </div>
-
-                  <button
-                    type="button"
-                    style={styles.focusButton}
-                    onClick={() => navigate(nextAction.route)}
-                  >
-                    Continuă
-                  </button>
-                </section>
-
-                <section style={styles.card}>
-                  <div style={styles.sectionHeader}>
-                    <div>
-                      <div style={styles.sectionLabel}>Focus skill</div>
-                      <h3 style={styles.sectionTitle}>Cel mai important gap</h3>
-                    </div>
-                  </div>
-
-                  {bestNextSkill ? (
-                    <div style={styles.focusSkillBox}>
-                      <strong>{bestNextSkill.name}</strong>
-                      <span>{bestNextSkill.category || "Categorie generală"}</span>
-
-                      <p>
-                        Acest skill poate crește scorul mediu cu aproximativ{" "}
-                        <b>+{bestNextSkill.avgGain}%</b> și apare în{" "}
-                        <b>{bestNextSkill.jobsAffected}</b> joburi urmărite.
-                      </p>
-
-                      <button
-                        type="button"
-                        style={styles.smallButtonDark}
-                        onClick={() => navigate("/analytics")}
-                      >
-                        Vezi detalii în Analytics
-                      </button>
-                    </div>
-                  ) : (
-                    <StareGoala
-                      title="Nu există încă focus skill"
-                      message="Salvează mai multe joburi pentru a calcula skillul prioritar."
-                    />
-                  )}
-                </section>
-
                 <section style={styles.card}>
                   <div style={styles.sectionHeader}>
                     <div>
@@ -728,7 +691,7 @@ export default function Dashboard() {
                       {categoryDistribution.map((item) => {
                         const max = Math.max(
                           ...categoryDistribution.map((entry) => entry.total),
-                          1
+                          1,
                         );
 
                         const width = Math.round((item.total / max) * 100);
@@ -741,7 +704,7 @@ export default function Dashboard() {
                               <div
                                 style={{
                                   ...styles.categoryFill,
-                                  width: `${width}%`
+                                  width: `${width}%`,
                                 }}
                               />
                             </div>
@@ -758,6 +721,23 @@ export default function Dashboard() {
                     />
                   )}
                 </section>
+                <section style={styles.focusCard}>
+                  <div>
+                    <div style={styles.sectionLabelLight}>
+                      Următoarea acțiune
+                    </div>
+                    <h3 style={styles.focusTitle}>{nextAction.title}</h3>
+                    <p style={styles.focusText}>{nextAction.helper}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    style={styles.focusButton}
+                    onClick={() => navigate(nextAction.route)}
+                  >
+                    Continuă
+                  </button>
+                </section>{" "}
               </div>
 
               <div style={styles.rightArea}>
@@ -766,38 +746,70 @@ export default function Dashboard() {
 
                   {stats.bestMatch ? (
                     <button
-                      type="button"
-                      style={styles.bestMatchCard}
-                      onClick={() =>
-                        navigate(`/joburi-urmarite/${stats.bestMatch.id}`)
-                      }
-                    >
-                      <div style={styles.bestMatchContent}>
-                        <strong>{stats.bestMatch.title}</strong>
-                        <p>{stats.bestMatch.company || "Companie necunoscută"}</p>
+  type="button"
+  style={{
+    ...styles.bestMatchCard,
+    ...(hoveredStat === "bestMatch" ? styles.bestMatchCardHover : {}),
+  }}
+  onMouseEnter={() => setHoveredStat("bestMatch")}
+  onMouseLeave={() => setHoveredStat(null)}
+  onClick={() =>
+    navigate(`/joburi-urmarite/${stats.bestMatch.id}`)
+  }
+>
+  <div style={styles.bestMatchContent}>
+    <strong>{stats.bestMatch.title}</strong>
+    <p>{stats.bestMatch.company || "Companie necunoscută"}</p>
 
-                        <span>
-                          {STATUS_LABELS[stats.bestMatch.status] ||
-                            stats.bestMatch.status ||
-                            "Salvat"}
-                        </span>
-                      </div>
+    <span style={styles.statusText}>
+      {STATUS_LABELS[stats.bestMatch.status] ||
+        stats.bestMatch.status ||
+        "Salvat"}
+    </span>
+  </div>
 
-                      <div
-                        style={{
-                          ...styles.bestScore,
-                          ...getScoreTone(stats.bestMatch.match_score)
-                        }}
-                      >
-                        {stats.bestMatch.match_score || 0}%
-                      </div>
-                    </button>
+  <div
+    style={{
+      ...styles.bestScorePill,
+      ...getScoreTone(stats.bestMatch.match_score),
+    }}
+  >
+    {stats.bestMatch.match_score || 0}% match
+  </div>
+</button>
                   ) : (
                     <StareGoala
                       title="Nu ai joburi salvate"
                       message="Analizează primul job pentru a vedea cel mai bun match."
                       actionLabel="Analizează job"
                       onAction={() => navigate("/analiza")}
+                    />
+                  )}
+                </section>
+
+                <section style={styles.gapCompactCard}>
+                  <div style={styles.sectionLabel}>Cel mai important gap</div>
+
+                  {bestNextSkill ? (
+                    <div style={styles.gapCompactBox}>
+                      <div style={styles.gapCompactTop}>
+                        <strong>{bestNextSkill.name}</strong>
+                        <span>{bestNextSkill.category || "General"}</span>
+                      </div>
+
+                      <div style={styles.gapCompactMetric}>
+                        +{bestNextSkill.avgGain}% impact estimat
+                      </div>
+
+                      <p>
+                        Afectează <b>{bestNextSkill.jobsAffected}</b> joburi
+                        urmărite.
+                      </p>
+                    </div>
+                  ) : (
+                    <StareGoala
+                      title="Nu există încă focus skill"
+                      message="Salvează mai multe joburi pentru a calcula skillul prioritar."
                     />
                   )}
                 </section>
@@ -840,13 +852,30 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ label, value, helper }) {
+function StatCard({
+  label,
+  value,
+  helper,
+  isHovered,
+  onClick,
+  onMouseEnter,
+  onMouseLeave,
+}) {
   return (
-    <div style={styles.statCard}>
+    <button
+      type="button"
+      style={{
+        ...styles.statCard,
+        ...(isHovered ? styles.statCardHover : {}),
+      }}
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       <div style={styles.statLabel}>{label}</div>
       <div style={styles.statValue}>{value}</div>
       <div style={styles.statHelper}>{helper}</div>
-    </div>
+    </button>
   );
 }
 
@@ -854,7 +883,7 @@ const styles = {
   page: {
     display: "grid",
     gap: 16,
-    paddingBottom: 24
+    paddingBottom: 24,
   },
 
   pageActions: {
@@ -862,7 +891,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
-    flexWrap: "wrap"
+    flexWrap: "wrap",
   },
 
   datePill: {
@@ -873,7 +902,7 @@ const styles = {
     color: "#64748b",
     fontSize: 13,
     fontWeight: 800,
-    boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)"
+    boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
   },
 
   reloadButton: {
@@ -883,38 +912,38 @@ const styles = {
     background: "#eff6ff",
     color: "#1d4ed8",
     cursor: "pointer",
-    fontWeight: 800
+    fontWeight: 800,
   },
 
   muted: {
     color: "#9ca3af",
-    fontSize: 14
+    fontSize: 14,
   },
 
   card: {
     background: "#ffffff",
-    borderRadius: 22,
-    padding: 20,
+    borderRadius: 20,
+    padding: 18,
     border: "1px solid #e5e7eb",
-    boxShadow: "0 12px 34px rgba(15, 23, 42, 0.055)"
+    boxShadow: "0 12px 34px rgba(15, 23, 42, 0.055)",
   },
 
   heroCard: {
     display: "grid",
-    gridTemplateColumns: "1fr 300px",
-    gap: 24,
-    padding: 28,
-    borderRadius: 28,
+    gridTemplateColumns: "1fr 240px",
+    gap: 18,
+    padding: "20px 22px",
+    borderRadius: 22,
     background:
       "radial-gradient(circle at top left, #eef2ff 0, #ffffff 46%, #f8fafc 100%)",
     border: "1px solid #dbeafe",
-    boxShadow: "0 22px 60px rgba(15,23,42,0.09)"
+    boxShadow: "0 22px 60px rgba(15,23,42,0.09)",
   },
 
   heroContent: {
     display: "flex",
     flexDirection: "column",
-    justifyContent: "center"
+    justifyContent: "center",
   },
 
   eyebrow: {
@@ -923,46 +952,46 @@ const styles = {
     color: "#4f46e5",
     textTransform: "uppercase",
     letterSpacing: 1.4,
-    marginBottom: 8
+    marginBottom: 8,
   },
 
   heroTitle: {
     margin: 0,
-    fontSize: 38,
-    lineHeight: 1.08,
+    fontSize: 30,
+    lineHeight: 1.1,
     color: "#111827",
     letterSpacing: "-0.06em",
-    maxWidth: 780
+    maxWidth: 780,
   },
 
   heroText: {
-    margin: "14px 0 0",
+    margin: "10px 0 0",
     color: "#64748b",
-    fontSize: 15,
-    lineHeight: 1.7,
-    maxWidth: 760
+    fontSize: 14,
+    lineHeight: 1.55,
+    maxWidth: 760,
   },
 
   heroActions: {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
-    marginTop: 22
+    marginTop: 16,
   },
 
   heroScorePanel: {
     display: "grid",
     placeItems: "center",
-    gap: 16
+    gap: 10,
   },
 
   circularScore: {
-    width: 178,
-    height: 178,
+    width: 132,
+    height: 132,
     borderRadius: "50%",
     padding: 12,
     boxShadow: "0 18px 42px rgba(79, 70, 229, 0.18)",
-    transition: "background 0.3s ease"
+    transition: "background 0.3s ease",
   },
 
   circularScoreInner: {
@@ -974,33 +1003,45 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    boxShadow: "inset 0 0 0 1px #e5e7eb"
+    boxShadow: "inset 0 0 0 1px #e5e7eb",
   },
 
   activeDaysPill: {
     display: "flex",
     alignItems: "center",
-    gap: 8,
-    padding: "10px 14px",
+    gap: 7,
+    padding: "8px 11px",
     borderRadius: 999,
     background: "#fff7ed",
     color: "#9a3412",
     border: "1px solid #fed7aa",
-    fontSize: 13
+    fontSize: 13,
   },
 
   quickStats: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 12
+    gap: 12,
   },
 
   statCard: {
+    width: "100%",
     background: "#ffffff",
-    borderRadius: 20,
-    padding: 17,
+    borderRadius: 16,
+    padding: "12px 14px",
     border: "1px solid #e5e7eb",
-    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.055)"
+    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.055)",
+    textAlign: "left",
+    cursor: "pointer",
+    transition:
+      "transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease",
+    fontFamily: "inherit",
+  },
+
+  statCardHover: {
+    transform: "translateY(-3px) scale(1.02)",
+    borderColor: "#4f46e5",
+    boxShadow: "0 18px 42px rgba(79, 70, 229, 0.16)",
   },
 
   statLabel: {
@@ -1008,47 +1049,47 @@ const styles = {
     color: "#9ca3af",
     textTransform: "uppercase",
     letterSpacing: 1.1,
-    fontWeight: 900
+    fontWeight: 900,
   },
 
   statValue: {
-    marginTop: 8,
-    fontSize: 32,
+    marginTop: 5,
+    fontSize: 26,
     color: "#111827",
-    fontWeight: 900
+    fontWeight: 900,
   },
 
   statHelper: {
-    marginTop: 4,
+    marginTop: 2,
     color: "#94a3b8",
-    fontSize: 12,
-    lineHeight: 1.4
+    fontSize: 11,
+    lineHeight: 1.4,
   },
 
   dashboardGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 360px",
     gap: 16,
-    alignItems: "start"
+    alignItems: "start",
   },
 
   leftArea: {
     display: "grid",
-    gap: 16
+    gap: 16,
   },
 
   rightArea: {
     display: "grid",
-    gap: 16
+    gap: 16,
   },
 
   activityCard: {
     background: "#ffffff",
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 20,
+    padding: 18,
     border: "1px solid #e5e7eb",
     boxShadow: "0 12px 34px rgba(15, 23, 42, 0.055)",
-    overflowX: "auto"
+    overflowX: "auto",
   },
 
   activityHeader: {
@@ -1056,7 +1097,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: 12,
-    marginBottom: 14
+    marginBottom: 10,
   },
 
   sectionLabel: {
@@ -1065,7 +1106,7 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: 1.2,
     fontWeight: 900,
-    marginBottom: 6
+    marginBottom: 6,
   },
 
   sectionLabelLight: {
@@ -1074,77 +1115,67 @@ const styles = {
     textTransform: "uppercase",
     letterSpacing: 1.2,
     fontWeight: 900,
-    marginBottom: 6
+    marginBottom: 6,
   },
 
   sectionTitle: {
     margin: 0,
     color: "#111827",
-    fontSize: 21,
-    letterSpacing: "-0.025em"
+    fontSize: 18,
+    letterSpacing: "-0.025em",
   },
 
   sectionSubtitle: {
-    margin: "6px 0 0",
+    margin: "4px 0 0",
     color: "#64748b",
-    fontSize: 13,
-    lineHeight: 1.5
+    fontSize: 12,
+    lineHeight: 1.5,
   },
 
   heatmapOuter: {
     width: "fit-content",
     maxWidth: "100%",
-    overflowX: "auto"
-  },
-
-  monthLabels: {
-    display: "grid",
-    gridTemplateColumns: "24px repeat(14, 20px)",
-    gap: 4,
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: 700,
-    marginBottom: 6
+    overflowX: "auto",
   },
 
   githubWrap: {
     display: "grid",
-    gridTemplateColumns: "24px 1fr",
-    gap: 8,
-    alignItems: "start"
+    gridTemplateColumns: "20px 1fr",
+    gap: 6,
+    alignItems: "start",
   },
 
   weekdayLabels: {
     display: "grid",
-    gridTemplateRows: "repeat(7, 14px)",
-    gap: 4,
+    gridTemplateRows: "repeat(7, 12px)",
+    gap: 3,
     color: "#64748b",
     fontSize: 10,
-    lineHeight: "14px"
+    lineHeight: "12px",
   },
 
   githubGrid: {
     display: "flex",
-    gap: 4
+    gap: 3,
   },
 
   githubWeek: {
     display: "grid",
-    gridTemplateRows: "repeat(7, 14px)",
-    gap: 4
+    gridTemplateRows: "repeat(7, 12px)",
+    gap: 3,
   },
 
   githubCellWrap: {
     position: "relative",
-    width: 14,
-    height: 14
+    width: 12,
+    height: 12,
   },
 
   githubCell: {
-    width: 14,
-    height: 14,
+    width: 12,
+    height: 12,
     borderRadius: 3,
-    border: "1px solid rgba(27,31,36,0.06)"
+    border: "1px solid rgba(27,31,36,0.06)",
   },
 
   githubTooltip: {
@@ -1163,32 +1194,32 @@ const styles = {
     zIndex: 100,
     pointerEvents: "none",
     display: "grid",
-    gap: 5
+    gap: 5,
   },
 
   tooltipList: {
     margin: "6px 0 0",
-    paddingLeft: 16
+    paddingLeft: 16,
   },
 
   activityEmpty: {
-    background: "#ebedf0"
+    background: "#ebedf0",
   },
 
   activityLow: {
-    background: "#9be9a8"
+    background: "#9be9a8",
   },
 
   activityMedium: {
-    background: "#40c463"
+    background: "#40c463",
   },
 
   activityHigh: {
-    background: "#30a14e"
+    background: "#30a14e",
   },
 
   activityVeryHigh: {
-    background: "#216e39"
+    background: "#216e39",
   },
 
   activityFooter: {
@@ -1197,13 +1228,13 @@ const styles = {
     gap: 7,
     marginTop: 12,
     color: "#94a3b8",
-    fontSize: 11
+    fontSize: 11,
   },
 
   legendDot: {
     width: 10,
     height: 10,
-    borderRadius: 3
+    borderRadius: 3,
   },
 
   focusCard: {
@@ -1215,20 +1246,20 @@ const styles = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 16,
-    boxShadow: "0 18px 45px rgba(15,23,42,0.14)"
+    boxShadow: "0 18px 45px rgba(15,23,42,0.14)",
   },
 
   focusTitle: {
     margin: 0,
     fontSize: 22,
-    letterSpacing: "-0.03em"
+    letterSpacing: "-0.03em",
   },
 
   focusText: {
     margin: "8px 0 0",
     color: "#cbd5e1",
     lineHeight: 1.6,
-    fontSize: 14
+    fontSize: 14,
   },
 
   focusButton: {
@@ -1239,7 +1270,7 @@ const styles = {
     color: "#111827",
     cursor: "pointer",
     fontWeight: 900,
-    whiteSpace: "nowrap"
+    whiteSpace: "nowrap",
   },
 
   sectionHeader: {
@@ -1247,7 +1278,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
-    marginBottom: 14
+    marginBottom: 14,
   },
 
   primaryButton: {
@@ -1258,7 +1289,7 @@ const styles = {
     color: "#ffffff",
     cursor: "pointer",
     fontWeight: 900,
-    whiteSpace: "nowrap"
+    whiteSpace: "nowrap",
   },
 
   secondaryButton: {
@@ -1269,7 +1300,7 @@ const styles = {
     color: "#111827",
     cursor: "pointer",
     fontWeight: 900,
-    whiteSpace: "nowrap"
+    whiteSpace: "nowrap",
   },
 
   smallButtonDark: {
@@ -1280,55 +1311,123 @@ const styles = {
     background: "#111827",
     color: "#ffffff",
     cursor: "pointer",
-    fontWeight: 800
+    fontWeight: 800,
+  },
+
+  gapCompactCard: {
+    background: "#ffffff",
+    borderRadius: 18,
+    padding: 16,
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+  },
+
+  gapCompactBox: {
+    display: "grid",
+    gap: 7,
+    padding: 12,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    color: "#475569",
+    lineHeight: 1.45,
+    fontSize: 13,
+  },
+
+  gapCompactTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  gapCompactMetric: {
+    padding: "7px 9px",
+    borderRadius: 10,
+    background: "#eef2ff",
+    color: "#3730a3",
+    fontSize: 12,
+    fontWeight: 900,
   },
 
   focusSkillBox: {
     display: "grid",
-    gap: 6,
-    padding: 16,
+    gap: 8,
+    padding: 14,
     borderRadius: 16,
     background: "#f8fafc",
     border: "1px solid #e5e7eb",
     color: "#475569",
-    lineHeight: 1.55
+    lineHeight: 1.55,
   },
 
-  bestMatchCard: {
-    width: "100%",
-    border: "none",
-    textAlign: "left",
+  focusSkillTop: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 16,
-    background: "#f8fafc",
-    cursor: "pointer"
+    gap: 10,
   },
+
+  focusSkillMetric: {
+    padding: "8px 10px",
+    borderRadius: 12,
+    background: "#eef2ff",
+    color: "#3730a3",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+
+  bestMatchCard: {
+  width: "100%",
+  textAlign: "left",
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  alignItems: "center",
+  gap: 12,
+  padding: "13px 14px",
+  borderRadius: 16,
+  background: "#f8fafc",
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+  border: "1px solid rgba(148,163,184,0.16)",
+  boxShadow: "0 10px 28px rgba(15, 23, 42, 0.04)",
+},
+
+bestMatchCardHover: {
+  transform: "translateY(-3px) scale(1.01)",
+  borderColor: "#4f46e5",
+  boxShadow: "0 18px 42px rgba(79, 70, 229, 0.16)",
+},
 
   bestMatchContent: {
     display: "flex",
     flexDirection: "column",
-    gap: 5,
-    minWidth: 0
+    gap: 4,
+    minWidth: 0,
   },
 
-  bestScore: {
-    minWidth: 58,
-    height: 58,
-    borderRadius: "50%",
+  statusText: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+
+  bestScorePill: {
+    minWidth: 82,
+    padding: "8px 10px",
+    borderRadius: 999,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: 900,
-    flexShrink: 0
+    fontSize: 12,
+    flexShrink: 0,
+    whiteSpace: "nowrap",
   },
 
   recentList: {
     display: "grid",
-    gap: 10
+    gap: 6,
   },
 
   recentItem: {
@@ -1336,49 +1435,50 @@ const styles = {
     border: "none",
     background: "#ffffff",
     borderBottom: "1px solid #f1f5f9",
-    padding: "10px 0",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
+    padding: "8px 0",
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    alignItems: "center",
+    gap: 10,
     textAlign: "left",
-    cursor: "pointer"
+    cursor: "pointer",
   },
 
   recentContent: {
     display: "flex",
     flexDirection: "column",
-    gap: 3,
-    minWidth: 0
+    gap: 2,
+    minWidth: 0,
   },
 
   categoryListWide: {
     display: "grid",
-    gap: 12
+    gap: 12,
   },
 
   categoryRow: {
     display: "grid",
     gridTemplateColumns: "140px 1fr 32px",
     gap: 10,
-    alignItems: "center"
+    alignItems: "center",
   },
 
   categoryName: {
     color: "#475569",
     fontSize: 13,
-    fontWeight: 800
+    fontWeight: 800,
   },
 
   categoryTrack: {
     height: 10,
     borderRadius: 999,
     background: "#e5e7eb",
-    overflow: "hidden"
+    overflow: "hidden",
   },
 
   categoryFill: {
     height: "100%",
     borderRadius: 999,
-    background: "linear-gradient(90deg, #378ADD, #1D9E75)"
-  }
+    background: "linear-gradient(90deg, #378ADD, #1D9E75)",
+  },
 };

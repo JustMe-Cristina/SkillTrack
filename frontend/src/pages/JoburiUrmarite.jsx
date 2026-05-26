@@ -46,6 +46,13 @@ const ML_CATEGORY_LABELS = {
   AI_ML: "AI / ML",
 };
 
+const DEGREE_LABELS = {
+  NONE: "Nespecificat",
+  BACHELOR: "Licență",
+  MASTER: "Master",
+  PHD: "Doctorat",
+};
+
 function formatDate(value) {
   if (!value) return "-";
 
@@ -68,6 +75,14 @@ function formatConfidence(value) {
 
 function getStatusLabel(status) {
   return STATUS_LABELS[status] || status || "Salvat";
+}
+
+function getDegreeLabel(job) {
+  if (job?.degree_level && DEGREE_LABELS[job.degree_level]) {
+    return DEGREE_LABELS[job.degree_level];
+  }
+
+  return job?.degree_label || "Nespecificat";
 }
 
 function getScoreTone(score) {
@@ -241,8 +256,6 @@ export default function JoburiUrmarite() {
       ["APLICAT", "INTERVIU", "OFERTA"].includes(job.status),
     ).length;
 
-    const withMl = jobs.filter((job) => job.ml_predicted_category).length;
-
     const avgScore =
       total === 0
         ? 0
@@ -254,7 +267,6 @@ export default function JoburiUrmarite() {
     return {
       total,
       applied,
-      withMl,
       avgScore,
     };
   }, [jobs]);
@@ -262,7 +274,7 @@ export default function JoburiUrmarite() {
   return (
     <AppLayout
       title="Joburi urmărite"
-      subtitle="Urmărește joburile salvate, scorul de potrivire, categoria ML și statusul aplicării."
+      subtitle="Urmărește joburile salvate, scorul de potrivire și statusul aplicării."
     >
       {message && <MesajFeedback message={message} type="info" />}
 
@@ -277,43 +289,30 @@ export default function JoburiUrmarite() {
               <div style={styles.eyebrow}>SkillTrack Jobs</div>
               <h1 style={styles.heroTitle}>Joburi urmărite</h1>
               <p style={styles.heroText}>
-                Aici vezi joburile salvate după analiză, scorul de potrivire,
-                categoria estimată de modelul ML și progresul tău în procesul de
-                aplicare.
+                Aici vezi joburile salvate după analiză, scorul de potrivire și
+                progresul tău în procesul de aplicare.
               </p>
             </div>
 
-            <div style={styles.heroStats}>
-              <span>Scor mediu</span>
-              <strong>{stats.avgScore}%</strong>
-              <p>calculat pe baza joburilor salvate</p>
+            <div style={styles.heroRight}>
+              <div style={styles.heroStats}>
+                <span>Scor mediu</span>
+                <strong>{stats.avgScore}%</strong>
+                <p>compatibilitate medie</p>
+              </div>
+
+              <div style={styles.heroMiniStats}>
+                <div style={styles.heroMiniCard}>
+                  <strong>{stats.total}</strong>
+                  <span>joburi salvate</span>
+                </div>
+
+                <div style={styles.heroMiniCard}>
+                  <strong>{stats.applied}</strong>
+                  <span>în aplicare</span>
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div style={styles.statsGrid}>
-            <InfoBox
-              label="Joburi salvate"
-              value={stats.total}
-              helper="total joburi urmărite"
-            />
-
-            <InfoBox
-              label="În aplicare"
-              value={stats.applied}
-              helper="aplicat / interviu / ofertă"
-            />
-
-            <InfoBox
-              label="Cu predicție ML"
-              value={stats.withMl}
-              helper="joburi clasificate automat"
-            />
-
-            <InfoBox
-              label="Rezultate afișate"
-              value={filteredJobs.length}
-              helper="după filtrele curente"
-            />
           </div>
 
           <div style={styles.filtersCard}>
@@ -464,11 +463,9 @@ export default function JoburiUrmarite() {
                         </span>
                       )}
 
-                      {job.degree_label && (
-                        <span style={styles.softBadge}>
-                          Studii: {job.degree_label}
-                        </span>
-                      )}
+                      <span style={styles.softBadge}>
+                        Studii: {getDegreeLabel(job)}
+                      </span>
 
                       {job.ml_model && (
                         <span style={styles.mlBadge}>
@@ -504,6 +501,16 @@ export default function JoburiUrmarite() {
                         onClick={() => navigate(`/joburi-urmarite/${job.id}`)}
                       >
                         Vezi detalii
+                      </button>
+
+                      <button
+                        type="button"
+                        style={styles.secondaryButton}
+                        onClick={() =>
+                          navigate(`/joburi-urmarite/${job.id}?edit=1`)
+                        }
+                      >
+                        Editează
                       </button>
 
                       <button
@@ -577,16 +584,6 @@ export default function JoburiUrmarite() {
   );
 }
 
-function InfoBox({ label, value, helper }) {
-  return (
-    <div style={styles.infoBox}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {helper && <p>{helper}</p>}
-    </div>
-  );
-}
-
 function EmptyState({ message }) {
   return (
     <div style={styles.emptyState}>
@@ -656,30 +653,38 @@ const styles = {
     maxWidth: 760,
   },
 
+  heroRight: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    minWidth: 250,
+  },
+
   heroStats: {
-    minWidth: 220,
     borderRadius: 18,
     background: "#111827",
     color: "white",
-    padding: 20,
-  },
-
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 14,
-    marginBottom: 16,
-  },
-
-  infoBox: {
-    padding: 16,
-    borderRadius: 16,
-    background: "#ffffff",
-    border: "1px solid #f1f5f9",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
+    padding: 18,
     display: "flex",
     flexDirection: "column",
     gap: 6,
+  },
+
+  heroMiniStats: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+  },
+
+  heroMiniCard: {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 14,
+    padding: "10px 12px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    boxShadow: "0 8px 24px rgba(15,23,42,0.05)",
   },
 
   filtersCard: {

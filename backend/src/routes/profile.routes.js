@@ -11,7 +11,7 @@ function cleanText(value) {
 
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     const [rows] = await db.query(
       `
@@ -57,7 +57,7 @@ router.get("/", authMiddleware, async (req, res) => {
 
 router.put("/", authMiddleware, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     const {
       full_name,

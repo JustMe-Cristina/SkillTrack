@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import { apiFetch } from "../services/api";
 
@@ -15,10 +16,10 @@ const EMPTY_PROFILE = {
   about: ""
 };
 
-const LEVEL_LABELS = {
-  1: "Fundamental",
-  2: "Intermediar",
-  3: "Avansat"
+const WORK_MODE_LABELS = {
+  REMOTE: "Remote",
+  HYBRID: "Hybrid",
+  ONSITE: "On-site"
 };
 
 const CATEGORY_LABELS = {
@@ -33,12 +34,6 @@ const CATEGORY_LABELS = {
   AI_ML: "AI / ML"
 };
 
-const WORK_MODE_LABELS = {
-  REMOTE: "Remote",
-  HYBRID: "Hybrid",
-  ONSITE: "On-site"
-};
-
 function normalizeArray(data, keys = []) {
   if (Array.isArray(data)) return data;
 
@@ -47,14 +42,6 @@ function normalizeArray(data, keys = []) {
   }
 
   return [];
-}
-
-function getSkillLevel(skill) {
-  return Number(skill.level ?? skill.current_level ?? 1);
-}
-
-function getSkillCategory(skill) {
-  return skill.category || "Altele";
 }
 
 function average(values) {
@@ -78,6 +65,14 @@ function countBy(items, getter) {
   });
 
   return result;
+}
+
+function getSkillLevel(skill) {
+  return Number(skill.level ?? skill.current_level ?? 1);
+}
+
+function getSkillCategory(skill) {
+  return skill.category || "Altele";
 }
 
 function getTopCategory(skills) {
@@ -136,6 +131,62 @@ function formatDate(value) {
   });
 }
 
+function getDateKey(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getActivityDate(item) {
+  return item.updated_at || item.created_at || item.saved_at || null;
+}
+
+function getActiveDayCount(jobs, roadmaps, skills) {
+  const days = new Set();
+
+  [...jobs, ...roadmaps, ...skills].forEach((item) => {
+    const key = getDateKey(getActivityDate(item));
+
+    if (key) {
+      days.add(key);
+    }
+  });
+
+  return days.size;
+}
+
+function getProfileLevel({ skillsLength, jobsLength, completedRoadmapsLength, activeRoadmapsLength }) {
+  if (skillsLength >= 12 && jobsLength >= 5 && (completedRoadmapsLength > 0 || activeRoadmapsLength > 0)) {
+    return "Market Ready";
+  }
+
+  if (skillsLength >= 6 || jobsLength >= 3 || activeRoadmapsLength > 0) {
+    return "Developing";
+  }
+
+  return "Emerging";
+}
+
+function getProfileLevelExplanation(level) {
+  if (level === "Market Ready") {
+    return "Profilul are suficiente date, skilluri și joburi analizate pentru recomandări relevante.";
+  }
+
+  if (level === "Developing") {
+    return "Profilul are o bază bună, dar mai are nevoie de skilluri validate și roadmap-uri finalizate.";
+  }
+
+  return "Profilul este la început. Analizează joburi și adaugă skilluri pentru recomandări mai precise.";
+}
+
 function buildReport({
   profile,
   skills,
@@ -147,7 +198,8 @@ function buildReport({
   activeRoadmaps,
   avgProgress,
   topSkillCategory,
-  dominantJobCategory
+  dominantJobCategory,
+  recommendationText
 }) {
   const advancedSkills = skills.filter((skill) => getSkillLevel(skill) === 3);
   const intermediateSkills = skills.filter((skill) => getSkillLevel(skill) === 2);
@@ -175,26 +227,26 @@ function buildReport({
       completedRoadmaps: completedRoadmaps.length,
       avgProgress
     },
-    recommendation:
-      activeRoadmaps.length > 0
-        ? "Continuă learning plan-ul activ cu cel mai mare impact asupra joburilor urmărite."
-        : jobs.length > 0
-        ? "Generează un learning plan pentru cel mai relevant job salvat."
-        : "Analizează și salvează primul job pentru a începe dezvoltarea profilului."
+    recommendation: recommendationText
   };
 }
 
 export default function ProfilulMeu() {
+  const navigate = useNavigate();
+
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [skills, setSkills] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [roadmaps, setRoadmaps] = useState([]);
+  const [market, setMarket] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [hoveredAchievement, setHoveredAchievement] = useState(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -205,17 +257,19 @@ export default function ProfilulMeu() {
     setMessage("");
 
     try {
-      const [skillsData, jobsData, roadmapsData, profileData] =
+      const [skillsData, jobsData, roadmapsData, profileData, marketData] =
         await Promise.all([
           apiFetch("/api/user-skills").catch(() => null),
           apiFetch("/api/jobs").catch(() => null),
           apiFetch("/api/roadmaps").catch(() => null),
-          apiFetch("/api/profile").catch(() => null)
+          apiFetch("/api/profile").catch(() => null),
+          apiFetch("/api/analytics/market").catch(() => null)
         ]);
 
-      setSkills(normalizeArray(skillsData, ["skills", "userSkills"]));
+      setSkills(normalizeArray(skillsData, ["skills", "userSkills", "data"]));
       setJobs(normalizeArray(jobsData, ["jobs", "data"]));
       setRoadmaps(normalizeArray(roadmapsData, ["roadmaps", "data"]));
+      setMarket(marketData);
 
       if (profileData?.profile) {
         setProfile((prev) => ({
@@ -268,6 +322,34 @@ export default function ProfilulMeu() {
     }
   }
 
+  async function handleDeleteAccount() {
+    const confirmed = window.confirm(
+      "Sigur vrei să ștergi contul? Această acțiune este permanentă."
+    );
+
+    if (!confirmed) return;
+
+    setDeletingAccount(true);
+    setMessage("");
+
+    try {
+      await apiFetch("/api/profile/account", {
+        method: "DELETE"
+      });
+
+      localStorage.removeItem("token");
+      navigate("/login");
+    } catch (err) {
+      console.error("DELETE ACCOUNT ERROR:", err);
+      setMessage(
+        err.message ||
+          "Nu s-a putut șterge contul. Verifică endpoint-ul DELETE /api/profile/account."
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   function handlePrintReport() {
     setShowReport(true);
 
@@ -282,6 +364,7 @@ export default function ProfilulMeu() {
     const completedRoadmaps = getCompletedRoadmaps(roadmaps);
     const activeRoadmaps = getActiveRoadmaps(roadmaps);
     const avgProgress = average(roadmaps.map((roadmap) => roadmap.progress));
+    const activeDayCount = getActiveDayCount(jobs, roadmaps, skills);
 
     return {
       bestJob,
@@ -289,77 +372,134 @@ export default function ProfilulMeu() {
       completedRoadmaps,
       activeRoadmaps,
       avgProgress,
+      activeDayCount,
+      profileLevel: getProfileLevel({
+        skillsLength: skills.length,
+        jobsLength: jobs.length,
+        completedRoadmapsLength: completedRoadmaps.length,
+        activeRoadmapsLength: activeRoadmaps.length
+      }),
       topSkillCategory: getTopCategory(skills),
       dominantJobCategory: getDominantJobCategory(jobs)
     };
   }, [skills, jobs, roadmaps]);
 
-  const levelStats = useMemo(() => {
+  const recommendation = useMemo(() => {
+    const bestNextSkill = market?.bestNextSkill;
+
+    if (bestNextSkill) {
+      return {
+        title: `Adaugă ${bestNextSkill.name}`,
+        text: `${bestNextSkill.name} lipsește în ${bestNextSkill.jobsAffected} joburi urmărite și poate crește scorul mediu cu aproximativ +${bestNextSkill.avgGain} puncte.`,
+        action: "Vezi roadmap",
+        route: "/roadmaps"
+      };
+    }
+
+    if (stats.activeRoadmaps.length > 0) {
+      return {
+        title: "Continuă roadmap-ul activ",
+        text: "Ai deja un learning plan în progres. Următorul pas este să finalizezi pașii rămași.",
+        action: "Continuă roadmap",
+        route: "/roadmaps"
+      };
+    }
+
+    if (jobs.length > 0) {
+      return {
+        title: "Generează un learning plan",
+        text: "Ai joburi salvate, dar nu ai încă un plan activ suficient de relevant pentru obiectivul tău.",
+        action: "Generează roadmap",
+        route: "/roadmaps"
+      };
+    }
+
     return {
-      fundamental: skills.filter((skill) => getSkillLevel(skill) === 1).length,
-      intermediate: skills.filter((skill) => getSkillLevel(skill) === 2).length,
-      advanced: skills.filter((skill) => getSkillLevel(skill) === 3).length
+      title: "Analizează primul job",
+      text: "Adaugă un job ca să primești recomandări personalizate pe baza profilului tău.",
+      action: "Analizează job",
+      route: "/analiza"
     };
-  }, [skills]);
-
-  const categoryChart = useMemo(() => {
-    const counts = countBy(skills, getSkillCategory);
-
-    return Object.entries(counts)
-      .map(([category, total]) => ({
-        category,
-        total
-      }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-  }, [skills]);
+  }, [market, stats.activeRoadmaps.length, jobs.length]);
 
   const achievements = useMemo(() => {
-    const hasJob = jobs.length > 0;
-    const hasRoadmap = roadmaps.length > 0;
-    const hasCompletedRoadmap = stats.completedRoadmaps.length > 0;
-    const hasOffer = stats.offerJobs.length > 0;
-    const hasAdvancedSkill = levelStats.advanced > 0;
+    const bestScore = Number(stats.bestJob?.match_score || 0);
 
     return [
       {
         id: "first-job",
-        icon: "💼",
-        title: "Primul job",
-        description: "Job salvat",
-        unlocked: hasJob
+        icon: "🚀",
+        title: "Primul job analizat",
+        description: "Ai salvat primul job urmărit.",
+        unlocked: jobs.length > 0,
+        tooltip:
+          jobs.length > 0
+            ? `Deblocat prin jobul: ${stats.bestJob?.title || "primul job salvat"}.`
+            : "Se deblochează după salvarea primului job."
       },
       {
-        id: "first-roadmap",
-        icon: "🧭",
-        title: "Learning plan",
-        description: "Plan generat",
-        unlocked: hasRoadmap
+        id: "high-match",
+        icon: "📈",
+        title: "Scor peste 80%",
+        description: "Ai cel puțin un job cu potrivire mare.",
+        unlocked: bestScore >= 80,
+        tooltip:
+          bestScore >= 80
+            ? `${stats.bestJob?.title || "Job"} are ${bestScore}% compatibilitate.`
+            : "Se deblochează când un job salvat trece de 80% match."
       },
       {
-        id: "completed-roadmap",
-        icon: "✅",
-        title: "Roadmap finalizat",
-        description: "100% progres",
-        unlocked: hasCompletedRoadmap
+        id: "skill-builder",
+        icon: "🧠",
+        title: "25 skilluri adăugate",
+        description: "Profil de competențe consistent.",
+        unlocked: skills.length >= 25,
+        tooltip: `Ai ${skills.length}/25 skilluri salvate în profil.`
       },
       {
-        id: "advanced-skill",
-        icon: "⭐",
-        title: "Skill avansat",
-        description: "Nivel avansat",
-        unlocked: hasAdvancedSkill
+        id: "active-days",
+        icon: "🔥",
+        title: "30 zile active",
+        description: "Activitate constantă în SkillTrack.",
+        unlocked: stats.activeDayCount >= 30,
+        tooltip: `Ai activitate în ${stats.activeDayCount}/30 zile diferite.`
+      },
+      {
+        id: "ten-roadmaps",
+        icon: "🎯",
+        title: "10 roadmap-uri finalizate",
+        description: "Dezvoltare susținută.",
+        unlocked: stats.completedRoadmaps.length >= 10,
+        tooltip: `Ai ${stats.completedRoadmaps.length}/10 roadmap-uri finalizate.`
       },
       {
         id: "offer",
         icon: "🏆",
         title: "Ofertă primită",
-        description: "Rezultat final",
-        unlocked: hasOffer,
-        special: true
+        description: "Ai marcat un job cu statusul Ofertă.",
+        unlocked: stats.offerJobs.length > 0,
+        special: true,
+        tooltip:
+          stats.offerJobs.length > 0
+            ? `Ai ${stats.offerJobs.length} ofertă/oferte marcate în aplicație.`
+            : "Se deblochează când marchezi un job cu statusul „Ofertă”."
       }
     ];
-  }, [jobs, roadmaps, stats, levelStats]);
+  }, [jobs.length, skills.length, stats]);
+
+  const recommendedJobs = useMemo(() => {
+    return [...jobs]
+      .filter(
+        (job) =>
+          Number(job.match_score || 0) >= 70 &&
+          !["APLICAT", "INTERVIU", "OFERTA", "RESPINS"].includes(job.status)
+      )
+      .sort(
+        (a, b) =>
+          Number(b.match_score || 0) - Number(a.match_score || 0)
+      )
+      .slice(0, 3);
+  }, [jobs]);
 
   const report = useMemo(() => {
     return buildReport({
@@ -373,9 +513,10 @@ export default function ProfilulMeu() {
       activeRoadmaps: stats.activeRoadmaps,
       avgProgress: stats.avgProgress,
       topSkillCategory: stats.topSkillCategory,
-      dominantJobCategory: stats.dominantJobCategory
+      dominantJobCategory: stats.dominantJobCategory,
+      recommendationText: recommendation.text
     });
-  }, [profile, skills, jobs, roadmaps, stats]);
+  }, [profile, skills, jobs, roadmaps, stats, recommendation.text]);
 
   const profileInitials = profile.full_name
     ? profile.full_name
@@ -404,7 +545,7 @@ export default function ProfilulMeu() {
               <div style={styles.heroContent}>
                 <div style={styles.avatarCircle}>{profileInitials}</div>
 
-                <div>
+                <div style={styles.heroMain}>
                   <div style={styles.eyebrow}>SkillTrack Career Profile</div>
 
                   <h2 style={styles.heroTitle}>
@@ -412,17 +553,16 @@ export default function ProfilulMeu() {
                   </h2>
 
                   <p style={styles.heroText}>
-                    {profile.about ||
-                      "Adaugă câteva informații despre tine, direcția ta profesională și obiectivele de carieră."}
+                    {profile.headline ||
+                      "Adaugă un headline profesional care descrie direcția ta de carieră."}
                   </p>
 
                   <div style={styles.profileTags}>
-                    <span>
-                      {profile.headline || "Headline profesional nespecificat"}
-                    </span>
                     <span>{profile.city || "Oraș nespecificat"}</span>
+                    <span>{profile.target_role || "Rol țintă nespecificat"}</span>
                     <span>
-                      {profile.target_role || "Rol țintă nespecificat"}
+                      {WORK_MODE_LABELS[profile.preferred_work_mode] ||
+                        "Work mode nespecificat"}
                     </span>
                   </div>
 
@@ -436,11 +576,7 @@ export default function ProfilulMeu() {
                 </div>
               </div>
 
-              <div style={styles.heroStatsPanel}>
-                <MiniStat value={skills.length} label="Skilluri" />
-                <MiniStat value={jobs.length} label="Joburi urmărite" />
-                <MiniStat value={roadmaps.length} label="Learning plan-uri" />
-              </div>
+              
             </section>
 
             {editingProfile && (
@@ -465,7 +601,7 @@ export default function ProfilulMeu() {
                     Nume complet
                     <input
                       style={styles.input}
-                      placeholder="Ex: Ana Ionescu"
+                      placeholder="Ex: Cristina Pop"
                       value={profile.full_name || ""}
                       onChange={(event) =>
                         updateProfileField("full_name", event.target.value)
@@ -477,7 +613,7 @@ export default function ProfilulMeu() {
                     Email
                     <input
                       style={styles.input}
-                      placeholder="Ex: ana@email.com"
+                      placeholder="Ex: cristina@email.com"
                       value={profile.email || ""}
                       onChange={(event) =>
                         updateProfileField("email", event.target.value)
@@ -608,9 +744,20 @@ export default function ProfilulMeu() {
                   >
                     Anulează
                   </button>
+
+                  <button
+                    type="button"
+                    style={styles.deleteAccountButton}
+                    onClick={handleDeleteAccount}
+                    disabled={deletingAccount}
+                  >
+                    {deletingAccount ? "Se șterge..." : "Șterge contul"}
+                  </button>
                 </div>
               </section>
             )}
+
+            
 
             <section style={styles.careerGrid}>
               <div style={styles.careerProfileCard}>
@@ -626,58 +773,122 @@ export default function ProfilulMeu() {
                   urmărite indică interes pentru{" "}
                   <strong>{stats.dominantJobCategory}</strong>.
                 </p>
-
-                <div style={styles.careerHighlights}>
-                  <div style={styles.highlightBox}>
-                    <span>Cel mai bun match</span>
-                    <strong>
-                      {stats.bestJob
-                        ? `${stats.bestJob.match_score || 0}%`
-                        : "-"}
-                    </strong>
-                  </div>
-
-                  <div style={styles.highlightBox}>
-                    <span>Oferte</span>
-                    <strong>{stats.offerJobs.length}</strong>
-                  </div>
-
-                  <div style={styles.highlightBox}>
-                    <span>Progres planuri</span>
-                    <strong>{stats.avgProgress}%</strong>
-                  </div>
-                </div>
               </div>
 
-              {stats.offerJobs.length > 0 ? (
-                <div style={styles.offerAchievementUnlocked}>
-                  <div style={styles.offerIcon}>🏆</div>
+              <div
+                style={
+                  stats.offerJobs.length > 0
+                    ? styles.offerAchievementUnlocked
+                    : styles.offerAchievementLocked
+                }
+              >
+                <div
+                  style={
+                    stats.offerJobs.length > 0
+                      ? styles.offerIcon
+                      : styles.offerIconLocked
+                  }
+                >
+                  {stats.offerJobs.length > 0 ? "🏆" : "🔒"}
+                </div>
 
-                  <div>
-                    <div style={styles.offerEyebrow}>Achievement unlocked</div>
-
-                    <h2 style={styles.offerTitle}>Ofertă primită</h2>
-
-                    <p style={styles.offerText}>
-                      Ai marcat {stats.offerJobs.length}{" "}
-                      {stats.offerJobs.length === 1 ? "job" : "joburi"} cu
-                      statusul „Ofertă”.
-                    </p>
+                <div>
+                  <div
+                    style={
+                      stats.offerJobs.length > 0
+                        ? styles.offerEyebrow
+                        : styles.offerEyebrowLocked
+                    }
+                  >
+                    {stats.offerJobs.length > 0
+                      ? "Achievement unlocked"
+                      : "Premiu blocat"}
                   </div>
+
+                  <h2
+                    style={
+                      stats.offerJobs.length > 0
+                        ? styles.offerTitle
+                        : styles.offerTitleLocked
+                    }
+                  >
+                    Ofertă primită
+                  </h2>
+
+                  <p
+                    style={
+                      stats.offerJobs.length > 0
+                        ? styles.offerText
+                        : styles.offerTextLocked
+                    }
+                  >
+                    {stats.offerJobs.length > 0
+                      ? `Ai marcat ${stats.offerJobs.length} joburi cu statusul „Ofertă”.`
+                      : "Se deblochează când marchezi un job cu statusul „Ofertă”."}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.sectionHeaderCompact}>
+                <div>
+                  <div style={styles.sectionLabel}>Recomandări aplicare</div>
+
+                  <h2 style={styles.sectionTitle}>
+                    Top 3 joburi la care merită să aplici
+                  </h2>
+
+                  <p style={styles.smallText}>
+                    Joburi cu compatibilitate mare care sunt încă în statusul
+                    „Salvat” și nu au fost marcate ca aplicate.
+                  </p>
+                </div>
+
+                <span style={styles.countPill}>
+                  {recommendedJobs.length} recomandări
+                </span>
+              </div>
+
+              {recommendedJobs.length > 0 ? (
+                <div style={styles.recommendedJobsGrid}>
+                  {recommendedJobs.map((job) => (
+                    <div key={job.id} style={styles.recommendedJobCard}>
+                      <div style={styles.recommendedTop}>
+                        <div>
+                          <strong style={styles.recommendedTitle}>
+                            {job.title}
+                          </strong>
+
+                          <p style={styles.recommendedCompany}>
+                            {job.company || "Companie nespecificată"}
+                          </p>
+                        </div>
+
+                        <div style={styles.recommendedScore}>
+                          {job.match_score || 0}%
+                        </div>
+                      </div>
+
+                      <div style={styles.recommendedMeta}>
+                        <span>{job.location || "Locație nespecificată"}</span>
+                        <span>{job.work_mode || "Work mode nespecificat"}</span>
+                        <span>Status: {job.status || "SALVAT"}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        style={styles.applyNowButton}
+                        onClick={() => navigate(`/joburi-urmarite/${job.id}`)}
+                      >
+                        Vezi jobul și aplică
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <div style={styles.offerAchievementLocked}>
-                  <div style={styles.offerIconLocked}>🔒</div>
-
-                  <div>
-                    <div style={styles.offerEyebrowLocked}>Premiu blocat</div>
-
-                    <h2 style={styles.offerTitleLocked}>Ofertă primită</h2>
-
-                    <p style={styles.offerTextLocked}>
-                      Se deblochează când marchezi un job cu statusul „Ofertă”.
-                    </p>
-                  </div>
+                <div style={styles.emptyState}>
+                  Nu există momentan joburi prioritare neaplicate.
                 </div>
               )}
             </section>
@@ -709,6 +920,8 @@ export default function ProfilulMeu() {
                         ? styles.achievementMiniSpecial
                         : {})
                     }}
+                    onMouseEnter={() => setHoveredAchievement(achievement)}
+                    onMouseLeave={() => setHoveredAchievement(null)}
                   >
                     <div style={styles.achievementMiniIcon}>
                       {achievement.unlocked ? achievement.icon : "🔒"}
@@ -718,76 +931,75 @@ export default function ProfilulMeu() {
                       <strong>{achievement.title}</strong>
                       <span>{achievement.description}</span>
                     </div>
+
+                    {hoveredAchievement?.id === achievement.id && (
+                      <div style={styles.achievementTooltip}>
+                        {achievement.tooltip}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </section>
 
-            <section style={styles.analyticsGrid}>
-              <div style={styles.card}>
-                <div style={styles.sectionLabel}>Niveluri competențe</div>
+            <section style={styles.directionCard}>
+              <div style={styles.sectionLabel}>Direcția profilului</div>
 
-                <h2 style={styles.sectionTitle}>Distribuție skilluri</h2>
+              <h2 style={styles.sectionTitle}>Estimare strategică</h2>
 
-                <div style={styles.levelList}>
-                  <LevelRow
-                    label={LEVEL_LABELS[1]}
-                    value={levelStats.fundamental}
-                    total={skills.length}
-                  />
+              <p style={styles.directionText}>
+                Această secțiune nu arată activitatea recentă, ci interpretarea
+                profilului tău: cât de matur este, în ce direcție profesională
+                merge și ce prag merită urmărit în continuare.
+              </p>
 
-                  <LevelRow
-                    label={LEVEL_LABELS[2]}
-                    value={levelStats.intermediate}
-                    total={skills.length}
-                  />
+              <div style={styles.directionGrid}>
+                <div style={styles.directionBox}>
+                  <span>Nivel profil</span>
 
-                  <LevelRow
-                    label={LEVEL_LABELS[3]}
-                    value={levelStats.advanced}
-                    total={skills.length}
-                  />
+                  <strong>{stats.profileLevel}</strong>
+
+                  <p>{getProfileLevelExplanation(stats.profileLevel)}</p>
+                </div>
+
+                <div style={styles.directionBox}>
+                  <span>Direcție dominantă</span>
+
+                  <strong>{stats.dominantJobCategory}</strong>
+
+                  <p>
+                    Calculată din categoriile ML ale joburilor salvate și
+                    analizate în aplicație.
+                  </p>
+                </div>
+
+                <div style={styles.directionBox}>
+                  <span>Următor milestone</span>
+
+                  <strong>{market?.bestNextSkill?.name || stats.topSkillCategory}</strong>
+
+                  <p>
+                    Skillul sau categoria cu cel mai mare potențial pentru
+                    creșterea compatibilității.
+                  </p>
                 </div>
               </div>
 
-              <div style={styles.card}>
-                <div style={styles.sectionLabel}>Categorii skilluri</div>
+              <button
+                type="button"
+                style={styles.directionActionBox}
+                onClick={() => navigate(recommendation.route)}
+              >
+                <div style={styles.sectionLabelLight}>Next best action</div>
 
-                <h2 style={styles.sectionTitle}>Profil competențe</h2>
+                <h3 style={styles.directionActionTitle}>{recommendation.title}</h3>
 
-                {categoryChart.length > 0 ? (
-                  <div style={styles.categoryChart}>
-                    {categoryChart.map((item) => {
-                      const max = Math.max(
-                        ...categoryChart.map((entry) => entry.total),
-                        1
-                      );
+                <p style={styles.directionActionText}>{recommendation.text}</p>
 
-                      const width = Math.round((item.total / max) * 100);
-
-                      return (
-                        <div key={item.category} style={styles.categoryRow}>
-                          <div style={styles.categoryTop}>
-                            <span>{item.category}</span>
-                            <strong>{item.total}</strong>
-                          </div>
-
-                          <div style={styles.categoryTrack}>
-                            <div
-                              style={{
-                                ...styles.categoryFill,
-                                width: `${width}%`
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <EmptyState message="Nu există încă skilluri salvate." />
-                )}
-              </div>
+                <span style={styles.directionActionButtonText}>
+                  {recommendation.action}
+                </span>
+              </button>
             </section>
 
             <section style={styles.reportCard}>
@@ -910,15 +1122,6 @@ export default function ProfilulMeu() {
   );
 }
 
-function MiniStat({ value, label }) {
-  return (
-    <div style={styles.miniStat}>
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
-  );
-}
-
 function ReportBlock({ title, items }) {
   return (
     <div style={styles.reportBlock}>
@@ -933,32 +1136,28 @@ function ReportBlock({ title, items }) {
   );
 }
 
-function LevelRow({ label, value, total }) {
-  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-
+function ProgressRow({ label, value, helper }) {
   return (
-    <div style={styles.levelRow}>
-      <div style={styles.levelTop}>
-        <span>{label}</span>
-        <strong>
-          {value} · {percent}%
-        </strong>
+    <div style={styles.progressRow}>
+      <div style={styles.progressTop}>
+        <div>
+          <span>{label}</span>
+          {helper && <p>{helper}</p>}
+        </div>
+
+        <strong>{value}%</strong>
       </div>
 
-      <div style={styles.levelTrack}>
+      <div style={styles.progressTrack}>
         <div
           style={{
-            ...styles.levelFill,
-            width: `${percent}%`
+            ...styles.progressFill,
+            width: `${Math.min(100, Number(value || 0))}%`
           }}
         />
       </div>
     </div>
   );
-}
-
-function EmptyState({ message }) {
-  return <div style={styles.emptyState}>{message}</div>;
 }
 
 const styles = {
@@ -991,10 +1190,10 @@ const styles = {
 
   heroCard: {
     display: "grid",
-    gridTemplateColumns: "1fr 280px",
+    gridTemplateColumns: "1fr 330px",
     gap: 18,
-    padding: 18,
-    borderRadius: 20,
+    padding: 20,
+    borderRadius: 22,
     background:
       "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.9))",
     border: "1px solid #dbeafe",
@@ -1007,16 +1206,20 @@ const styles = {
     gap: 16
   },
 
+  heroMain: {
+    minWidth: 0
+  },
+
   avatarCircle: {
-    width: 56,
-    height: 56,
+    width: 62,
+    height: 62,
     borderRadius: "50%",
     background: "#111827",
     color: "#ffffff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: 900,
     flexShrink: 0,
     boxShadow: "0 10px 24px rgba(15,23,42,0.14)"
@@ -1069,21 +1272,49 @@ const styles = {
     fontSize: 13
   },
 
-  heroStatsPanel: {
+  heroRight: {
     display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 8
+    gap: 10
   },
 
-  miniStat: {
-    borderRadius: 14,
+  heroInsightBox: {
+    borderRadius: 16,
     background: "#ffffff",
     border: "1px solid #e5e7eb",
-    padding: 12,
-    display: "flex",
-    flexDirection: "column",
-    gap: 3,
+    padding: 14,
+    display: "grid",
+    gap: 8,
     boxShadow: "0 6px 18px rgba(15,23,42,0.035)"
+  },
+
+  heroInsightDarkBox: {
+    borderRadius: 16,
+    background: "#111827",
+    color: "#ffffff",
+    padding: 14,
+    display: "grid",
+    gap: 5,
+    boxShadow: "0 10px 24px rgba(15,23,42,0.12)"
+  },
+
+  metricExplanationDarkOnLight: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 11,
+    lineHeight: 1.45
+  },
+
+  progressBar: {
+    height: 9,
+    borderRadius: 999,
+    background: "#e5e7eb",
+    overflow: "hidden"
+  },
+
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(90deg, #378ADD, #1D9E75)"
   },
 
   profileEditCard: {
@@ -1172,6 +1403,55 @@ const styles = {
     fontWeight: 900
   },
 
+  deleteAccountButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "1px solid #fecaca",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    cursor: "pointer",
+    fontWeight: 900
+  },
+
+  recommendationCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    flexWrap: "wrap",
+    background: "#111827",
+    color: "#ffffff",
+    borderRadius: 22,
+    padding: 22,
+    boxShadow: "0 16px 44px rgba(15,23,42,0.16)"
+  },
+
+  recommendationTitle: {
+    margin: 0,
+    color: "#ffffff",
+    fontSize: 22,
+    letterSpacing: "-0.02em"
+  },
+
+  recommendationText: {
+    margin: "8px 0 0",
+    color: "#cbd5e1",
+    fontSize: 13,
+    lineHeight: 1.6,
+    maxWidth: 760
+  },
+
+  recommendationButton: {
+    padding: "11px 15px",
+    borderRadius: 12,
+    border: "none",
+    background: "#ffffff",
+    color: "#111827",
+    cursor: "pointer",
+    fontWeight: 900,
+    whiteSpace: "nowrap"
+  },
+
   careerGrid: {
     display: "grid",
     gridTemplateColumns: "1.3fr 0.7fr",
@@ -1191,22 +1471,6 @@ const styles = {
     color: "#475569",
     lineHeight: 1.7,
     fontSize: 14
-  },
-
-  careerHighlights: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 12,
-    marginTop: 16
-  },
-
-  highlightBox: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
-    borderRadius: 14,
-    padding: 12,
-    display: "grid",
-    gap: 5
   },
 
   offerAchievementUnlocked: {
@@ -1349,12 +1613,13 @@ const styles = {
 
   achievementRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
     gap: 10
   },
 
   achievementMiniCard: {
-    minHeight: 94,
+    position: "relative",
+    minHeight: 100,
     padding: 12,
     borderRadius: 16,
     border: "1px solid #e5e7eb",
@@ -1391,77 +1656,214 @@ const styles = {
   achievementMiniContent: {
     display: "flex",
     flexDirection: "column",
-    gap: 3
+    gap: 3,
+    fontSize: 12
   },
 
-  analyticsGrid: {
+  achievementTooltip: {
+    position: "absolute",
+    bottom: "calc(100% + 8px)",
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: 220,
+    padding: "10px 12px",
+    borderRadius: 12,
+    background: "#111827",
+    color: "#ffffff",
+    fontSize: 11,
+    lineHeight: 1.45,
+    boxShadow: "0 14px 30px rgba(15,23,42,0.22)",
+    zIndex: 100,
+    pointerEvents: "none"
+  },
+
+  directionCard: {
+    background: "#ffffff",
+    borderRadius: 22,
+    padding: 22,
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 10px 30px rgba(15,23,42,0.05)"
+  },
+
+  directionText: {
+    margin: "10px 0 0",
+    color: "#475569",
+    lineHeight: 1.7,
+    fontSize: 14,
+    maxWidth: 900
+  },
+
+  directionGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 14,
+    marginTop: 18
   },
 
-  levelList: {
+  directionBox: {
+    padding: 18,
+    borderRadius: 18,
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    display: "grid",
+    gap: 8
+  },
+
+  directionActionBox: {
+    width: "100%",
+    marginTop: 18,
+    padding: 20,
+    borderRadius: 20,
+    border: "none",
+    background: "#111827",
+    color: "#ffffff",
+    textAlign: "left",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 14px 36px rgba(15,23,42,0.14)"
+  },
+
+  directionActionTitle: {
+    margin: 0,
+    color: "#ffffff",
+    fontSize: 22
+  },
+
+  directionActionText: {
+    margin: "10px 0 0",
+    color: "#cbd5e1",
+    lineHeight: 1.7,
+    fontSize: 14
+  },
+
+  evolutionCard: {
+    background: "#ffffff",
+    borderRadius: 22,
+    padding: 22,
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 10px 30px rgba(15,23,42,0.05)"
+  },
+
+  evolutionList: {
     display: "grid",
     gap: 14,
     marginTop: 16
   },
 
-  levelRow: {
+  progressRow: {
     display: "grid",
     gap: 8
   },
 
-  levelTop: {
+  progressTop: {
     display: "flex",
     justifyContent: "space-between",
-    color: "#475569",
-    fontSize: 13,
-    fontWeight: 800
-  },
-
-  levelTrack: {
-    height: 10,
-    borderRadius: 999,
-    background: "#e5e7eb",
-    overflow: "hidden"
-  },
-
-  levelFill: {
-    height: "100%",
-    borderRadius: 999,
-    background: "linear-gradient(90deg, #378ADD, #1D9E75)"
-  },
-
-  categoryChart: {
-    display: "grid",
+    alignItems: "flex-start",
     gap: 12,
-    marginTop: 16
-  },
-
-  categoryRow: {
-    display: "grid",
-    gap: 7
-  },
-
-  categoryTop: {
-    display: "flex",
-    justifyContent: "space-between",
     color: "#475569",
     fontSize: 13,
     fontWeight: 800
   },
 
-  categoryTrack: {
+  progressTrack: {
     height: 10,
     borderRadius: 999,
     background: "#e5e7eb",
     overflow: "hidden"
   },
 
-  categoryFill: {
-    height: "100%",
+
+  recommendedJobsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 12,
+    marginTop: 18
+  },
+
+  recommendedJobCard: {
+    borderRadius: 18,
+    padding: 16,
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 10px 26px rgba(15,23,42,0.05)",
+    display: "grid",
+    gap: 12
+  },
+
+  recommendedTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12
+  },
+
+  recommendedTitle: {
+    color: "#111827",
+    fontSize: 15
+  },
+
+  recommendedCompany: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 13
+  },
+
+  recommendedScore: {
+    minWidth: 58,
+    height: 58,
+    borderRadius: "50%",
+    background: "#dcfce7",
+    color: "#166534",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: 15,
+    flexShrink: 0
+  },
+
+  recommendedMeta: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    color: "#64748b",
+    fontSize: 13
+  },
+
+  applyNowButton: {
+    padding: "11px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: "#111827",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: 800
+  },
+
+  directionActionButtonText: {
+    display: "inline-flex",
+    marginTop: 14,
+    padding: "9px 12px",
     borderRadius: 999,
-    background: "linear-gradient(90deg, #7F77DD, #378ADD)"
+    background: "#ffffff",
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: 900
+  },
+
+  emptyState: {
+    minHeight: 96,
+    borderRadius: 14,
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    color: "#94a3b8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    padding: 18,
+    fontSize: 13,
+    marginTop: 16
   },
 
   reportCard: {
@@ -1586,20 +1988,5 @@ const styles = {
     background: "#ecfdf5",
     border: "1px solid #bbf7d0",
     color: "#166534"
-  },
-
-  emptyState: {
-    minHeight: 100,
-    borderRadius: 14,
-    background: "#f8fafc",
-    border: "1px dashed #cbd5e1",
-    color: "#94a3b8",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    textAlign: "center",
-    padding: 18,
-    fontSize: 13,
-    marginTop: 16
   }
 };

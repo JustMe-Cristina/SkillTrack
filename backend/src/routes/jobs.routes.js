@@ -6,6 +6,27 @@ const { logActivity } = require("../utils/activityLogger");
 
 const router = express.Router();
 
+const ALLOWED_WORK_MODES = ["REMOTE", "HYBRID", "ONSITE"];
+const ALLOWED_EMPLOYMENT_TYPES = ["FULL_TIME", "PART_TIME", "INTERNSHIP"];
+const ALLOWED_STATUSES = [
+  "SALVAT",
+  "APLICAT",
+  "INTERVIU",
+  "OFERTA",
+  "RESPINS",
+  "FARA_RASPUNS"
+];
+
+function cleanText(value) {
+  const text = String(value || "").trim();
+  return text.length > 0 ? text : null;
+}
+
+function cleanEnum(value, allowedValues) {
+  if (!value) return null;
+  return allowedValues.includes(value) ? value : null;
+}
+
 async function runJobAnalysis(payload, userId) {
   if (typeof jobAnalysisService === "function") {
     return jobAnalysisService(payload, userId);
@@ -58,11 +79,7 @@ function extractSkillName(skill) {
   return skill.skill || skill.name || skill.skill_name || "";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/jobs/analyze
-// Analizează un job fără să îl salveze.
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.post("/analyze", auth, async (req, res) => {
   const userId = req.user.userId;
 
@@ -108,14 +125,9 @@ router.post("/analyze", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/jobs
-// Salvează job analizat + skilluri + rezultat ML.
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.post("/", auth, async (req, res) => {
   const userId = req.user.userId;
-
   const connection = await db.getConnection();
 
   try {
@@ -179,18 +191,18 @@ router.post("/", auth, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
-        title,
-        company || null,
-        location || "Nespecificat",
-        work_mode || null,
-        employment_type || null,
-        description,
+        cleanText(title),
+        cleanText(company),
+        cleanText(location) || "Nespecificat",
+        cleanEnum(work_mode, ALLOWED_WORK_MODES),
+        cleanEnum(employment_type, ALLOWED_EMPLOYMENT_TYPES),
+        cleanText(description),
         Number(score || 0),
-        status || "SALVAT",
+        cleanEnum(status, ALLOWED_STATUSES) || "SALVAT",
         experience_min ?? null,
-        experience_label || null,
-        degree_level || null,
-        degree_label || null,
+        cleanText(experience_label),
+        cleanText(degree_level),
+        cleanText(degree_label),
         normalizeBoolean(meets_experience_requirement),
         normalizeBoolean(meets_degree_requirement),
         ml_predicted_category || null,
@@ -263,11 +275,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/jobs
-// Lista joburilor utilizatorului.
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.get("/", auth, async (req, res) => {
   const userId = req.user.userId;
 
@@ -314,11 +322,7 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/jobs/:id
-// Detalii job + skilluri + rezultat ML.
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.get("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
@@ -390,11 +394,120 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PATCH /api/jobs/:id/status
-// Actualizare status job.
-// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/jobs/:id
+// Editare job salvat.
+router.patch("/:id", auth, async (req, res) => {
+  const userId = req.user.userId;
+  const jobId = Number(req.params.id);
 
+  if (!Number.isFinite(jobId)) {
+    return res.status(400).json({
+      ok: false,
+      error: "ID job invalid."
+    });
+  }
+
+  try {
+    const {
+      title,
+      company,
+      location,
+      work_mode,
+      employment_type,
+      description,
+      experience_min,
+      experience_label,
+      degree_level,
+      degree_label,
+      meets_experience_requirement,
+      meets_degree_requirement
+    } = req.body;
+
+    const cleanedTitle = cleanText(title);
+    const cleanedDescription = cleanText(description);
+
+    if (!cleanedTitle || !cleanedDescription) {
+      return res.status(400).json({
+        ok: false,
+        error: "Titlul și descrierea jobului sunt obligatorii."
+      });
+    }
+
+    const [result] = await db.query(
+      `UPDATE jobs
+       SET
+         title = ?,
+         company = ?,
+         location = ?,
+         work_mode = ?,
+         employment_type = ?,
+         description = ?,
+         experience_min = ?,
+         experience_label = ?,
+         degree_level = ?,
+         degree_label = ?,
+         meets_experience_requirement = ?,
+         meets_degree_requirement = ?,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ?`,
+      [
+        cleanedTitle,
+        cleanText(company),
+        cleanText(location) || "Nespecificat",
+        cleanEnum(work_mode, ALLOWED_WORK_MODES),
+        cleanEnum(employment_type, ALLOWED_EMPLOYMENT_TYPES),
+        cleanedDescription,
+        experience_min === "" || experience_min === undefined
+          ? null
+          : Number(experience_min),
+        cleanText(experience_label),
+        cleanText(degree_level),
+        cleanText(degree_label),
+        normalizeBoolean(meets_experience_requirement),
+        normalizeBoolean(meets_degree_requirement),
+        jobId,
+        userId
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Jobul nu a fost găsit."
+      });
+    }
+
+    const [[updatedJob]] = await db.query(
+      `SELECT *
+       FROM jobs
+       WHERE id = ? AND user_id = ?`,
+      [jobId, userId]
+    );
+
+    try {
+      await logActivity(userId, "JOB_UPDATED", {
+        jobId,
+        title: cleanedTitle
+      });
+    } catch (logErr) {
+      console.warn("Activity log warning:", logErr.message);
+    }
+
+    return res.json({
+      ok: true,
+      job: updatedJob,
+      message: "Job actualizat cu succes."
+    });
+  } catch (err) {
+    console.error("UPDATE JOB ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Nu s-a putut actualiza jobul."
+    });
+  }
+});
+
+// PATCH /api/jobs/:id/status
 router.patch("/:id/status", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
@@ -407,17 +520,17 @@ router.patch("/:id/status", auth, async (req, res) => {
     });
   }
 
-  if (!status) {
+  if (!status || !ALLOWED_STATUSES.includes(status)) {
     return res.status(400).json({
       ok: false,
-      error: "Statusul este obligatoriu."
+      error: "Status invalid."
     });
   }
 
   try {
     const [result] = await db.query(
       `UPDATE jobs
-       SET status = ?
+       SET status = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ?`,
       [status, jobId, userId]
     );
@@ -442,11 +555,7 @@ router.patch("/:id/status", auth, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/jobs/:id
-// Ștergere job.
-// ─────────────────────────────────────────────────────────────────────────────
-
 router.delete("/:id", auth, async (req, res) => {
   const userId = req.user.userId;
   const jobId = Number(req.params.id);
