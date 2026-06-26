@@ -42,24 +42,24 @@ def normalize_input(payload):
     )
 
 
-def main():
+def load_metrics():
+    if not METRICS_PATH.exists():
+        return {}
+
+    with open(METRICS_PATH, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def predict_category(payload):
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
             "Modelul ML nu există. Rulează întâi train_job_category_model.py."
         )
 
-    raw_input = sys.stdin.read()
-
-    if not raw_input.strip():
-        raise ValueError("Nu a fost primit niciun payload JSON.")
-
-    payload = json.loads(raw_input)
-
     model = joblib.load(MODEL_PATH)
     input_df = normalize_input(payload)
 
     predicted_category = model.predict(input_df)[0]
-
     probabilities = []
 
     if hasattr(model, "predict_proba"):
@@ -69,27 +69,35 @@ def main():
         probabilities = [
             {
                 "category": str(category),
-                "probability": round(float(prob), 4),
+                "probability": round(float(probability), 4),
             }
-            for category, prob in zip(classes, proba)
+            for category, probability in zip(classes, proba)
         ]
 
         probabilities.sort(key=lambda item: item["probability"], reverse=True)
 
-    metrics = {}
+    metrics = load_metrics()
+    final_model = metrics.get("best_model", {})
 
-    if METRICS_PATH.exists():
-        with open(METRICS_PATH, "r", encoding="utf-8") as file:
-            metrics = json.load(file)
-
-    result = {
+    return {
         "ok": True,
         "predictedCategory": str(predicted_category),
         "probabilities": probabilities,
-        "model": metrics.get("best_model", {}).get("name"),
-        "problemType": metrics.get("problem_type"),
-        "target": metrics.get("target"),
+        "confidence": probabilities[0]["probability"] if probabilities else None,
+        "model": final_model.get("name") or "Gradient Boosting",
+        "problemType": metrics.get("problem_type") or "multiclass_classification",
+        "target": metrics.get("target") or "category",
     }
+
+
+def main():
+    raw_input = sys.stdin.read()
+
+    if not raw_input.strip():
+      raise ValueError("Nu a fost primit niciun payload JSON.")
+
+    payload = json.loads(raw_input)
+    result = predict_category(payload)
 
     print(json.dumps(result, ensure_ascii=False))
 

@@ -28,7 +28,10 @@ router.post("/extract", auth, upload.single("cv"), async (req, res) => {
 
     const { detectedSkills } = await extractAndDetectSkills(req.file);
 
-    const detectedIds = detectedSkills.map((skill) => Number(skill.skillId));
+    const detectedIds = detectedSkills
+      .map((skill) => Number(skill.skillId))
+      .filter(Number.isFinite);
+
     let existingSkillIds = new Set();
 
     if (detectedIds.length > 0) {
@@ -37,7 +40,8 @@ router.post("/extract", auth, upload.single("cv"), async (req, res) => {
       const [existingRows] = await db.query(
         `SELECT skill_id
          FROM user_skills
-         WHERE user_id = ? AND skill_id IN (${placeholders})`,
+         WHERE user_id = ?
+           AND skill_id IN (${placeholders})`,
         [userId, ...detectedIds]
       );
 
@@ -46,12 +50,16 @@ router.post("/extract", auth, upload.single("cv"), async (req, res) => {
       );
     }
 
-    const enrichedSkills = detectedSkills.map((skill) => ({
-      ...skill,
-      alreadyAdded: existingSkillIds.has(Number(skill.skillId)),
-      selected: !existingSkillIds.has(Number(skill.skillId)),
-      level: 2
-    }));
+    const enrichedSkills = detectedSkills.map((skill) => {
+      const alreadyAdded = existingSkillIds.has(Number(skill.skillId));
+
+      return {
+        ...skill,
+        alreadyAdded,
+        selected: !alreadyAdded,
+        level: 2
+      };
+    });
 
     return res.json({
       ok: true,
@@ -59,6 +67,7 @@ router.post("/extract", auth, upload.single("cv"), async (req, res) => {
     });
   } catch (err) {
     console.error("CV EXTRACT ERROR:", err);
+
     return res.status(500).json({
       ok: false,
       error: err.message || "Server error"
@@ -87,11 +96,16 @@ router.post("/apply", auth, async (req, res) => {
 
     for (const skill of skills) {
       const skillId = Number(skill.skillId ?? skill.skill_id ?? skill.id);
-      const level = Number(skill.level || 2);
 
       if (!Number.isFinite(skillId)) {
         continue;
       }
+
+      const rawLevel = Number(skill.level);
+      const level =
+        Number.isFinite(rawLevel) && rawLevel >= 1 && rawLevel <= 3
+          ? rawLevel
+          : 2;
 
       const [result] = await connection.query(
         `INSERT IGNORE INTO user_skills (user_id, skill_id, level)
@@ -100,7 +114,7 @@ router.post("/apply", auth, async (req, res) => {
       );
 
       if (result.affectedRows > 0) {
-        importedCount += 1;
+        importedCount++;
       }
     }
 
@@ -118,11 +132,15 @@ router.post("/apply", auth, async (req, res) => {
     });
   } catch (err) {
     if (connection) {
-      await connection.rollback();
-      connection.release();
+      try {
+        await connection.rollback();
+      } finally {
+        connection.release();
+      }
     }
 
     console.error("CV APPLY ERROR:", err);
+
     return res.status(500).json({
       ok: false,
       error: err.message || "Server error"

@@ -1,20 +1,27 @@
-export default function MesajFeedback({ message, type = "info" }) {
+export default function MesajFeedback({
+  message,
+  type = "info"
+}) {
   if (!message) return null;
 
   return (
-    <div style={styles[type] || styles.info}>
+    <div
+      role="alert"
+      style={styles[type] ?? styles.info}
+    >
       {message}
     </div>
   );
 }
 
 const base = {
-  padding: "13px 15px",
+  padding: "14px 16px",
+  marginBottom: 18,
   borderRadius: 14,
+  border: "1px solid transparent",
   fontSize: 14,
-  fontWeight: 700,
-  lineHeight: 1.5,
-  marginBottom: 16,
+  fontWeight: 600,
+  lineHeight: 1.5
 };
 
 const styles = {
@@ -22,18 +29,20 @@ const styles = {
     ...base,
     background: "#ecfdf5",
     color: "#166534",
-    border: "1px solid #bbf7d0",
+    borderColor: "#bbf7d0"
   },
+
   error: {
     ...base,
     background: "#fef2f2",
     color: "#991b1b",
-    border: "1px solid #fecaca",
+    borderColor: "#fecaca"
   },
+
   info: {
     ...base,
     background: "#eef2ff",
     color: "#3730a3",
-    border: "1px solid #c7d2fe",
-  },
+    borderColor: "#c7d2fe"
+  }
 };

@@ -14,48 +14,37 @@ const NAV_LINKS = [
 export default function AppNavbar() {
   const location = useLocation();
   const navigate = useNavigate();
-
   const { logout, user } = useAuth();
 
-  function isActive(path) {
-    return (
-      location.pathname === path ||
-      location.pathname.startsWith(`${path}/`)
-    );
-  }
+  const isActive = (path) =>
+    location.pathname === path ||
+    location.pathname.startsWith(`${path}/`);
 
-  function getLinkStyle(path) {
-    const active = isActive(path);
+  const getLinkStyle = (path) => ({
+    ...styles.link,
+    ...(isActive(path) ? styles.linkActive : styles.linkInactive)
+  });
 
-    return {
-      ...styles.link,
-      ...(active ? styles.linkActive : styles.linkInactive)
-    };
-  }
-
-  function handleLogout() {
+  const handleLogout = () => {
     logout();
-
     navigate("/autentificare");
-  }
+  };
 
   return (
     <nav style={styles.wrapper} aria-label="Navigare principală">
-      <div style={styles.leftSection}>
-        <div style={styles.links}>
-          {NAV_LINKS.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              style={getLinkStyle(item.path)}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </div>
+      <div style={styles.links}>
+        {NAV_LINKS.map((item) => (
+          <Link
+            key={item.path}
+            to={item.path}
+            style={getLinkStyle(item.path)}
+          >
+            {item.label}
+          </Link>
+        ))}
       </div>
 
-      <div style={styles.rightSection}>
+      <div style={styles.actions}>
         {user && (
           <div style={styles.userBadge}>
             {user.name}
@@ -79,40 +68,34 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 14,
     flexWrap: "wrap",
+    gap: 20,
     width: "100%"
   },
 
-  leftSection: {
+  links: {
     display: "flex",
     alignItems: "center",
-    gap: 14,
-    flexWrap: "wrap"
+    flexWrap: "wrap",
+    gap: 10,
+    flex: "1 1 700px"
   },
 
-  rightSection: {
+  actions: {
     display: "flex",
     alignItems: "center",
     gap: 12,
     flexWrap: "wrap"
   },
 
-  links: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    alignItems: "center"
-  },
-
   link: {
     textDecoration: "none",
-    padding: "10px 13px",
+    padding: "10px 14px",
     borderRadius: 10,
     border: "1px solid #e5e7eb",
     fontSize: 13,
-    fontWeight: 800,
-    transition: "0.2s ease",
+    fontWeight: 700,
+    transition: "all 0.2s ease",
     whiteSpace: "nowrap"
   },
 
@@ -132,22 +115,23 @@ const styles = {
     padding: "10px 14px",
     borderRadius: 12,
     background: "#eef2ff",
+    border: "1px solid #c7d2fe",
     color: "#3730a3",
     fontSize: 13,
-    fontWeight: 900,
-    border: "1px solid #c7d2fe",
+    fontWeight: 700,
     whiteSpace: "nowrap"
   },
 
   logoutButton: {
-    padding: "10px 13px",
+    padding: "10px 14px",
     borderRadius: 10,
     border: "1px solid #fecaca",
     background: "#fff1f2",
     color: "#b91c1c",
     fontSize: 13,
-    fontWeight: 900,
+    fontWeight: 700,
     cursor: "pointer",
+    transition: "all 0.2s ease",
     whiteSpace: "nowrap"
   }
 };

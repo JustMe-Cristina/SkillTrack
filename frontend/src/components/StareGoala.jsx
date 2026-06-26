@@ -2,7 +2,7 @@ export default function StareGoala({
   title = "Nu există date încă",
   message = "Adaugă informații pentru a vedea conținut aici.",
   actionLabel,
-  onAction,
+  onAction
 }) {
   return (
     <div style={styles.box}>
@@ -13,7 +13,11 @@ export default function StareGoala({
       <p style={styles.message}>{message}</p>
 
       {actionLabel && onAction && (
-        <button type="button" style={styles.button} onClick={onAction}>
+        <button
+          type="button"
+          style={styles.button}
+          onClick={onAction}
+        >
           {actionLabel}
         </button>
       )}
@@ -23,53 +27,58 @@ export default function StareGoala({
 
 const styles = {
   box: {
-    minHeight: 150,
+    minHeight: 220,
+    background: "#ffffff",
+    border: "1px dashed #d1d5db",
     borderRadius: 18,
-    background: "#f8fafc",
-    border: "1px dashed #cbd5e1",
-    color: "#64748b",
+    padding: 32,
     display: "flex",
     flexDirection: "column",
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
     textAlign: "center",
-    padding: 24,
+    boxShadow: "0 10px 24px rgba(15,23,42,0.04)"
   },
 
   icon: {
-    width: 42,
-    height: 42,
+    width: 56,
+    height: 56,
     borderRadius: "50%",
     background: "#eef2ff",
     color: "#3730a3",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    fontSize: 24,
     fontWeight: 900,
-    marginBottom: 12,
+    marginBottom: 18
   },
 
   title: {
     margin: 0,
     color: "#111827",
-    fontSize: 18,
+    fontSize: 20,
+    fontWeight: 800
   },
 
   message: {
-    margin: "8px 0 0",
-    maxWidth: 460,
-    fontSize: 14,
-    lineHeight: 1.6,
+    margin: "10px 0 0",
+    maxWidth: 500,
+    color: "#6b7280",
+    fontSize: 15,
+    lineHeight: 1.7
   },
 
   button: {
-    marginTop: 16,
-    padding: "10px 14px",
-    borderRadius: 12,
+    marginTop: 22,
+    padding: "12px 18px",
     border: "none",
+    borderRadius: 12,
     background: "#111827",
     color: "#ffffff",
+    fontSize: 14,
+    fontWeight: 700,
     cursor: "pointer",
-    fontWeight: 900,
-  },
+    transition: "0.2s"
+  }
 };

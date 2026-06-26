@@ -1,4 +1,4 @@
-{
+ {
   "metadata": {
     "dataset_name": "SkillTrack Cluj/Romania Job Market Seed Dataset",
     "version": "1.0",
@@ -94,7 +94,11 @@
       "Model Evaluation": "AI_ML",
       "Large Language Models": "AI_ML",
       "Artificial Intelligence": "AI_ML",
-      "MLOps": "AI_ML"
+      "MLOps": "AI_ML",
+      "Data Quality": "DATA",
+      "Product Management": "BUSINESS",
+      "C++": "BACKEND",
+      "Figma": "FRONTEND"
     },
     "companies_covered": [
       "3Pillar Global",
@@ -241,7 +245,7 @@
       ],
       "technologies": [
         "Power BI",
-        "SQL Server",
+        "Microsoft SQL Server",
         "Power Query"
       ],
       "description": "DeLonghi Romania caută un/o Business Intelligence Specialist pentru echipele din Cluj-Napoca, cu activitate în regim onsite. Rolul presupune colaborare cu stakeholderi tehnici și business pentru livrarea de soluții digitale, rapoarte sau funcționalități software relevante. Candidatul va lucra cu Power BI, SQL Server, Power Query și va folosi în mod constant competențe precum Power BI, SQL, ETL, Data Modeling, Dashboard Design. Responsabilitățile includ analiză de cerințe, documentare, implementare sau testare, în funcție de specificul rolului. Sunt importante comunicarea clară, atenția la detalii și capacitatea de a transforma informațiile operaționale în rezultate acționabile. Experiența cu instrumente moderne, versionare, lucru Agile și colaborare cross-functională reprezintă un avantaj. Poziția este potrivită pentru nivel mid și contribuie direct la proiecte locale sau internaționale.",
@@ -422,7 +426,7 @@
         "SQL",
         "Power BI"
       ],
-      "description": "E.ON Software Development caută un/o Product Data Analyst pentru echipele din Cluj-Napoca, cu activitate în regim remote. Rolul presupune colaborare cu stakeholderi tehnici și business pentru livrarea de soluții digitale, rapoarte sau funcționalități software relevante. Candidatul va lucra cu Python, SQL, Power BI și va folosi în mod constant competențe precum SQL, Python, Data Analysis, Statistics, Dashboard Design. Responsabilitățile includ analiză de cerințe, documentare, implementare sau testare, în funcție de specificul rolului. Sunt importante comunicarea clară, atenția la detalii și capacitatea de a transforma informațiile operaționale în rezultate acționabile. Experiența cu instrumente moderne, versionare, lucru Agile și colaborare cross-functională reprezintă un avantaj. Poziția este potrivită pentru nivel mid și contribuie direct la proiecte locale sau internaționale.",
+      "description": "E.ON Software Development caută un/o Product Data Analyst pentru echipele din Cluj-Napoca, cu activitate în regim remote. Rolul presupune colaborare cu stakeholderi tehnici și business pentru livrarea de soluții digitale, rapoarte sau funcționalități software relevante. Candidatul va lucra cu Python, SQL, Power BI și va folosi în mod constant competențe precum SQL, Python, Data Analysis, Statistical Analysis, Dashboard Design. Responsabilitățile includ analiză de cerințe, documentare, implementare sau testare, în funcție de specificul rolului. Sunt importante comunicarea clară, atenția la detalii și capacitatea de a transforma informațiile operaționale în rezultate acționabile. Experiența cu instrumente moderne, versionare, lucru Agile și colaborare cross-functională reprezintă un avantaj. Poziția este potrivită pentru nivel mid și contribuie direct la proiecte locale sau internaționale.",
       "posted_at": "2026-04-21",
       "source_type": "REALISTIC_SYNTHETIC",
       "source_note": "Rol realist-sintetic construit pentru demo academic SkillTrack, inspirat din piața IT/business din Cluj și din tipologiile publice de joburi.",
@@ -479,7 +483,7 @@
       "technologies": [
         "Power BI",
         "DAX",
-        "SQL Server"
+        "Microsoft SQL Server"
       ],
       "description": "Office Depot / Veyer caută un/o BI Developer pentru echipele din Cluj-Napoca, cu activitate în regim hybrid. Rolul presupune colaborare cu stakeholderi tehnici și business pentru livrarea de soluții digitale, rapoarte sau funcționalități software relevante. Candidatul va lucra cu Power BI, DAX, SQL Server și va folosi în mod constant competențe precum Power BI, SQL, DAX, Data Modeling, ETL. Responsabilitățile includ analiză de cerințe, documentare, implementare sau testare, în funcție de specificul rolului. Sunt importante comunicarea clară, atenția la detalii și capacitatea de a transforma informațiile operaționale în rezultate acționabile. Experiența cu instrumente moderne, versionare, lucru Agile și colaborare cross-functională reprezintă un avantaj. Poziția este potrivită pentru nivel mid și contribuie direct la proiecte locale sau internaționale.",
       "posted_at": "2026-04-25",
@@ -2067,7 +2071,7 @@
         "Pandas",
         "Scikit-learn"
       ],
-      "description": "Emerson caută un/o Data Scientist pentru echipele din Cluj-Napoca, cu activitate în regim hybrid. Rolul presupune colaborare cu stakeholderi tehnici și business pentru livrarea de soluții digitale, rapoarte sau funcționalități software relevante. Candidatul va lucra cu Python, Pandas, Scikit-learn și va folosi în mod constant competențe precum Python, Machine Learning, Statistics, Pandas, Model Evaluation. Responsabilitățile includ analiză de cerințe, documentare, implementare sau testare, în funcție de specificul rolului. Sunt importante comunicarea clară, atenția la detalii și capacitatea de a transforma informațiile operaționale în rezultate acționabile. Experiența cu instrumente moderne, versionare, lucru Agile și colaborare cross-functională reprezintă un avantaj. Poziția este potrivită pentru nivel mid și contribuie direct la proiecte locale sau internaționale.",
+      "description": "Emerson caută un/o Data Scientist pentru echipele din Cluj-Napoca, cu activitate în regim hybrid. Rolul presupune colaborare cu stakeholderi tehnici și business pentru livrarea de soluții digitale, rapoarte sau funcționalități software relevante. Candidatul va lucra cu Python, Pandas, Scikit-learn și va folosi în mod constant competențe precum Python, Machine Learning, Statistical Analysis, Pandas, Model Evaluation. Responsabilitățile includ analiză de cerințe, documentare, implementare sau testare, în funcție de specificul rolului. Sunt importante comunicarea clară, atenția la detalii și capacitatea de a transforma informațiile operaționale în rezultate acționabile. Experiența cu instrumente moderne, versionare, lucru Agile și colaborare cross-functională reprezintă un avantaj. Poziția este potrivită pentru nivel mid și contribuie direct la proiecte locale sau internaționale.",
       "posted_at": "2026-05-09",
       "source_type": "REALISTIC_SYNTHETIC",
       "source_note": "Rol realist-sintetic construit pentru demo academic SkillTrack, inspirat din piața IT/business din Cluj și din tipologiile publice de joburi.",

@@ -1,11 +1,15 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-function RutaProtejata({ children }) {
+export default function RutaProtejata({ children }) {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return <p>Se încarcă...</p>;
+    return (
+      <div style={styles.loading}>
+        Se încarcă...
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
@@ -15,4 +19,15 @@ function RutaProtejata({ children }) {
   return children;
 }
 
-export default RutaProtejata;
+const styles = {
+  loading: {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 16,
+    fontWeight: 600,
+    color: "#6b7280",
+    background: "#f4f6f9"
+  }
+};

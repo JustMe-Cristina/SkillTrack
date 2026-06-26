@@ -39,7 +39,11 @@ async function recalculateJobScoreForUser(userId, jobId) {
   const connection = await db.getConnection();
 
   try {
-    const score = await calculateJobMatchScore(connection, userId, jobId);
+    const score = await calculateJobMatchScore(
+      connection,
+      userId,
+      jobId
+    );
 
     await connection.query(
       `UPDATE jobs
@@ -68,7 +72,11 @@ async function recalculateAllJobScoresForUser(userId) {
     const updatedJobs = [];
 
     for (const job of jobs) {
-      const score = await calculateJobMatchScore(connection, userId, job.id);
+      const score = await calculateJobMatchScore(
+        connection,
+        userId,
+        job.id
+      );
 
       await connection.query(
         `UPDATE jobs
@@ -89,8 +97,13 @@ async function recalculateAllJobScoresForUser(userId) {
   }
 }
 
+async function recalculateJobsForUser(userId) {
+  return recalculateAllJobScoresForUser(userId);
+}
+
 module.exports = {
   calculateJobMatchScore,
   recalculateJobScoreForUser,
-  recalculateAllJobScoresForUser
+  recalculateAllJobScoresForUser,
+  recalculateJobsForUser
 };

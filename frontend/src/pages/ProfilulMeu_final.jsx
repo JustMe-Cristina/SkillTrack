@@ -1372,7 +1372,7 @@ const styles = {
   },
 
   deleteAccountButton: {
-    padding: "10px 14px",
+    padding: "11px 15px",
     borderRadius: 12,
     border: "none",
     background: "#dc2626",

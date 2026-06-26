@@ -16,7 +16,45 @@ function getPythonCommand() {
     return localVenvPython;
   }
 
-  return "python3";
+  return process.platform === "win32" ? "python" : "python3";
+}
+
+function runPython(scriptPath, payload) {
+  return new Promise((resolve, reject) => {
+    const python = spawn(getPythonCommand(), [scriptPath], {
+      cwd: path.dirname(scriptPath)
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    python.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    python.on("error", reject);
+
+    python.stdin.write(JSON.stringify(payload));
+    python.stdin.end();
+
+    python.on("close", (code) => {
+      if (code !== 0) {
+        return reject(
+          new Error(stderr.trim() || stdout.trim() || "Python process failed.")
+        );
+      }
+
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        reject(new Error("Invalid JSON returned by Python script."));
+      }
+    });
+  });
 }
 
 router.get("/job-category/metrics", auth, async (req, res) => {
@@ -34,8 +72,7 @@ router.get("/job-category/metrics", auth, async (req, res) => {
       });
     }
 
-    const raw = fs.readFileSync(metricsPath, "utf8");
-    const metrics = JSON.parse(raw);
+    const metrics = JSON.parse(fs.readFileSync(metricsPath, "utf8"));
 
     return res.json({
       ok: true,
@@ -55,12 +92,14 @@ router.post("/job-category/predict", auth, async (req, res) => {
     const payload = {
       title: req.body.title || "",
       description: req.body.description || "",
-      skills: req.body.skills || [],
-      technologies: req.body.technologies || [],
+      skills: Array.isArray(req.body.skills) ? req.body.skills : [],
+      technologies: Array.isArray(req.body.technologies)
+        ? req.body.technologies
+        : [],
       work_mode: req.body.work_mode || "UNKNOWN",
       employment_type: req.body.employment_type || "UNKNOWN",
       seniority: req.body.seniority || "UNKNOWN",
-      difficulty_score: req.body.difficulty_score || 0
+      difficulty_score: Number(req.body.difficulty_score) || 0
     };
 
     if (!payload.title && !payload.description) {
@@ -82,64 +121,22 @@ router.post("/job-category/predict", auth, async (req, res) => {
       });
     }
 
-    const pythonCommand = getPythonCommand();
+    const result = await runPython(scriptPath, payload);
 
-    const pythonProcess = spawn(pythonCommand, [scriptPath], {
-      cwd: path.join(__dirname, "../../ml")
-    });
+    if (!result.ok) {
+      return res.status(500).json(result);
+    }
 
-    let stdout = "";
-    let stderr = "";
-
-    pythonProcess.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    pythonProcess.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    pythonProcess.stdin.write(JSON.stringify(payload));
-    pythonProcess.stdin.end();
-
-    pythonProcess.on("close", (code) => {
-      if (code !== 0) {
-        console.error("ML PREDICT STDERR:", stderr);
-        console.error("ML PREDICT STDOUT:", stdout);
-
-        return res.status(500).json({
-          ok: false,
-          error: "Predicția ML a eșuat.",
-          details: stderr || stdout
-        });
-      }
-
-      try {
-        const result = JSON.parse(stdout);
-
-        if (!result.ok) {
-          return res.status(500).json(result);
-        }
-
-        return res.json({
-          ok: true,
-          prediction: result
-        });
-      } catch (parseError) {
-        console.error("ML PREDICT PARSE ERROR:", parseError);
-        console.error("Raw stdout:", stdout);
-
-        return res.status(500).json({
-          ok: false,
-          error: "Răspuns invalid de la scriptul ML."
-        });
-      }
+    return res.json({
+      ok: true,
+      prediction: result
     });
   } catch (err) {
-    console.error("ML PREDICT ROUTE ERROR:", err);
+    console.error("ML PREDICT ERROR:", err);
+
     return res.status(500).json({
       ok: false,
-      error: "Server error"
+      error: err.message || "Predicția ML a eșuat."
     });
   }
 });

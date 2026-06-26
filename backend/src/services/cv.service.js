@@ -16,7 +16,8 @@ async function extractTextFromFile(file) {
     originalName.endsWith(".pdf")
   ) {
     const result = await pdfParse(file.buffer);
-    return result.text || "";
+
+    return (result.text || "").trim();
   }
 
   if (
@@ -27,28 +28,47 @@ async function extractTextFromFile(file) {
     const result = await mammoth.extractRawText({
       buffer: file.buffer
     });
-    return result.value || "";
+
+    return (result.value || "").trim();
   }
 
-  throw new Error("Unsupported file type. Please upload PDF or DOCX.");
+  throw new Error(
+    "Unsupported file type. Please upload a PDF or DOCX file."
+  );
 }
 
 async function detectSkillsFromText(text) {
-  const normalizedText = String(text || "").toLowerCase();
+  const normalizedText = String(text || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalizedText) {
+    return [];
+  }
 
   const [skills] = await db.query(
-    "SELECT id, name, category FROM skills ORDER BY name ASC"
+    `SELECT
+       id,
+       name,
+       category
+     FROM skills
+     ORDER BY name ASC`
   );
 
-  const detectedSkills = skills
-    .filter((skill) => skillMatchesText(skill.name, normalizedText))
-    .map((skill) => ({
-      skillId: Number(skill.id),
-      name: skill.name,
-      category: skill.category
-    }));
+  const detected = [];
 
-  return detectedSkills;
+  for (const skill of skills) {
+    if (skillMatchesText(skill.name, normalizedText)) {
+      detected.push({
+        skillId: Number(skill.id),
+        name: skill.name,
+        category: skill.category
+      });
+    }
+  }
+
+  return detected;
 }
 
 async function extractAndDetectSkills(file) {

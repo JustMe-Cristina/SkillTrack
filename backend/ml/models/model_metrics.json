@@ -8,9 +8,9 @@
     "seniority",
     "difficulty_score"
   ],
-  "dataset_size": 70,
-  "train_size": 52,
-  "test_size": 18,
+  "dataset_size": 67,
+  "train_size": 50,
+  "test_size": 17,
   "labels": [
     "AI_ML",
     "BACKEND",
@@ -25,19 +25,18 @@
   "tested_models": [
     {
       "model": "Logistic Regression",
-      "accuracy": 0.6111,
-      "macro_precision": 0.6333,
-      "macro_recall": 0.5833,
-      "macro_f1": 0.5481,
-      "weighted_precision": 0.6778,
-      "weighted_recall": 0.6111,
-      "weighted_f1": 0.5963,
-      "cv_macro_f1": 0.4942,
+      "accuracy": 0.6471,
+      "macro_precision": 0.6019,
+      "macro_recall": 0.5926,
+      "macro_f1": 0.5593,
+      "weighted_precision": 0.7206,
+      "weighted_recall": 0.6471,
+      "weighted_f1": 0.6549,
       "classification_report": {
         "AI_ML": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1-score": 0.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
           "support": 2.0
         },
         "BACKEND": {
@@ -47,10 +46,10 @@
           "support": 2.0
         },
         "BI": {
-          "precision": 1.0,
-          "recall": 0.5,
-          "f1-score": 0.6666666666666666,
-          "support": 2.0
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 1.0
         },
         "BUSINESS": {
           "precision": 1.0,
@@ -59,16 +58,16 @@
           "support": 2.0
         },
         "DATA": {
-          "precision": 0.5,
-          "recall": 0.75,
-          "f1-score": 0.6,
-          "support": 4.0
+          "precision": 0.6666666666666666,
+          "recall": 0.6666666666666666,
+          "f1-score": 0.6666666666666666,
+          "support": 3.0
         },
         "FRONTEND": {
           "precision": 1.0,
-          "recall": 0.5,
-          "f1-score": 0.6666666666666666,
-          "support": 2.0
+          "recall": 0.6666666666666666,
+          "f1-score": 0.8,
+          "support": 3.0
         },
         "FULLSTACK": {
           "precision": 0.0,
@@ -77,42 +76,41 @@
           "support": 1.0
         },
         "PM": {
-          "precision": 0.2,
+          "precision": 0.25,
           "recall": 1.0,
-          "f1-score": 0.3333333333333333,
+          "f1-score": 0.4,
           "support": 1.0
         },
         "QA": {
-          "precision": 1.0,
+          "precision": 0.5,
           "recall": 0.5,
-          "f1-score": 0.6666666666666666,
+          "f1-score": 0.5,
           "support": 2.0
         },
-        "accuracy": 0.6111111111111112,
+        "accuracy": 0.6470588235294118,
         "macro avg": {
-          "precision": 0.6333333333333333,
-          "recall": 0.5833333333333334,
-          "f1-score": 0.5481481481481482,
-          "support": 18.0
+          "precision": 0.6018518518518517,
+          "recall": 0.5925925925925926,
+          "f1-score": 0.5592592592592592,
+          "support": 17.0
         },
         "weighted avg": {
-          "precision": 0.6777777777777777,
-          "recall": 0.6111111111111112,
-          "f1-score": 0.5962962962962962,
-          "support": 18.0
+          "precision": 0.7205882352941176,
+          "recall": 0.6470588235294118,
+          "f1-score": 0.6549019607843137,
+          "support": 17.0
         }
       }
     },
     {
       "model": "Naive Bayes",
-      "accuracy": 0.2778,
-      "macro_precision": 0.1429,
-      "macro_recall": 0.1667,
-      "macro_f1": 0.1235,
-      "weighted_precision": 0.1746,
-      "weighted_recall": 0.2778,
-      "weighted_f1": 0.1728,
-      "cv_macro_f1": 0.1601,
+      "accuracy": 0.3529,
+      "macro_precision": 0.2108,
+      "macro_recall": 0.2407,
+      "macro_f1": 0.1898,
+      "weighted_precision": 0.276,
+      "weighted_recall": 0.3529,
+      "weighted_f1": 0.2623,
       "classification_report": {
         "AI_ML": {
           "precision": 0.0,
@@ -121,16 +119,16 @@
           "support": 2.0
         },
         "BACKEND": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1-score": 0.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
           "support": 2.0
         },
         "BI": {
           "precision": 0.0,
           "recall": 0.0,
           "f1-score": 0.0,
-          "support": 2.0
+          "support": 1.0
         },
         "BUSINESS": {
           "precision": 0.0,
@@ -139,16 +137,16 @@
           "support": 2.0
         },
         "DATA": {
-          "precision": 0.2857142857142857,
+          "precision": 0.23076923076923078,
           "recall": 1.0,
-          "f1-score": 0.4444444444444444,
-          "support": 4.0
+          "f1-score": 0.375,
+          "support": 3.0
         },
         "FRONTEND": {
-          "precision": 1.0,
-          "recall": 0.5,
+          "precision": 0.6666666666666666,
+          "recall": 0.6666666666666666,
           "f1-score": 0.6666666666666666,
-          "support": 2.0
+          "support": 3.0
         },
         "FULLSTACK": {
           "precision": 0.0,
@@ -168,147 +166,66 @@
           "f1-score": 0.0,
           "support": 2.0
         },
-        "accuracy": 0.2777777777777778,
+        "accuracy": 0.35294117647058826,
         "macro avg": {
-          "precision": 0.14285714285714285,
-          "recall": 0.16666666666666666,
-          "f1-score": 0.1234567901234568,
-          "support": 18.0
+          "precision": 0.2108262108262108,
+          "recall": 0.24074074074074073,
+          "f1-score": 0.18981481481481477,
+          "support": 17.0
         },
         "weighted avg": {
-          "precision": 0.1746031746031746,
-          "recall": 0.2777777777777778,
-          "f1-score": 0.1728395061728395,
-          "support": 18.0
-        }
-      }
-    },
-    {
-      "model": "KNN",
-      "accuracy": 0.5,
-      "macro_precision": 0.5667,
-      "macro_recall": 0.4722,
-      "macro_f1": 0.5,
-      "weighted_precision": 0.5778,
-      "weighted_recall": 0.5,
-      "weighted_f1": 0.5185,
-      "cv_macro_f1": 0.4388,
-      "classification_report": {
-        "AI_ML": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1-score": 0.0,
-          "support": 2.0
-        },
-        "BACKEND": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1-score": 0.0,
-          "support": 2.0
-        },
-        "BI": {
-          "precision": 1.0,
-          "recall": 0.5,
-          "f1-score": 0.6666666666666666,
-          "support": 2.0
-        },
-        "BUSINESS": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
-          "support": 2.0
-        },
-        "DATA": {
-          "precision": 0.6,
-          "recall": 0.75,
-          "f1-score": 0.6666666666666666,
-          "support": 4.0
-        },
-        "FRONTEND": {
-          "precision": 1.0,
-          "recall": 0.5,
-          "f1-score": 0.6666666666666666,
-          "support": 2.0
-        },
-        "FULLSTACK": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1-score": 0.0,
-          "support": 1.0
-        },
-        "PM": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
-          "support": 1.0
-        },
-        "QA": {
-          "precision": 0.5,
-          "recall": 0.5,
-          "f1-score": 0.5,
-          "support": 2.0
-        },
-        "accuracy": 0.5,
-        "macro avg": {
-          "precision": 0.5666666666666667,
-          "recall": 0.4722222222222222,
-          "f1-score": 0.5,
-          "support": 18.0
-        },
-        "weighted avg": {
-          "precision": 0.5777777777777778,
-          "recall": 0.5,
-          "f1-score": 0.5185185185185185,
-          "support": 18.0
+          "precision": 0.27601809954751133,
+          "recall": 0.35294117647058826,
+          "f1-score": 0.26225490196078427,
+          "support": 17.0
         }
       }
     },
     {
       "model": "Decision Tree",
-      "accuracy": 0.6667,
-      "macro_precision": 0.5,
-      "macro_recall": 0.5833,
-      "macro_f1": 0.5265,
-      "weighted_precision": 0.5667,
-      "weighted_recall": 0.6667,
-      "weighted_f1": 0.6005,
-      "cv_macro_f1": 0.3778,
+      "accuracy": 0.3529,
+      "macro_precision": 0.2725,
+      "macro_recall": 0.2963,
+      "macro_f1": 0.2401,
+      "weighted_precision": 0.3473,
+      "weighted_recall": 0.3529,
+      "weighted_f1": 0.3013,
       "classification_report": {
         "AI_ML": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
+          "precision": 0.16666666666666666,
+          "recall": 0.5,
+          "f1-score": 0.25,
           "support": 2.0
         },
         "BACKEND": {
-          "precision": 0.4,
-          "recall": 1.0,
-          "f1-score": 0.5714285714285714,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
           "support": 2.0
         },
         "BI": {
           "precision": 0.0,
           "recall": 0.0,
           "f1-score": 0.0,
-          "support": 2.0
+          "support": 1.0
         },
         "BUSINESS": {
-          "precision": 1.0,
+          "precision": 0.2857142857142857,
           "recall": 1.0,
-          "f1-score": 1.0,
+          "f1-score": 0.4444444444444444,
           "support": 2.0
         },
         "DATA": {
-          "precision": 0.6,
-          "recall": 0.75,
-          "f1-score": 0.6666666666666666,
-          "support": 4.0
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 3.0
         },
         "FRONTEND": {
-          "precision": 0.5,
-          "recall": 0.5,
-          "f1-score": 0.5,
-          "support": 2.0
+          "precision": 1.0,
+          "recall": 0.6666666666666666,
+          "f1-score": 0.8,
+          "support": 3.0
         },
         "FULLSTACK": {
           "precision": 0.0,
@@ -324,35 +241,34 @@
         },
         "QA": {
           "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
           "support": 2.0
         },
-        "accuracy": 0.6666666666666666,
+        "accuracy": 0.35294117647058826,
         "macro avg": {
-          "precision": 0.5,
-          "recall": 0.5833333333333334,
-          "f1-score": 0.5264550264550264,
-          "support": 18.0
+          "precision": 0.2724867724867725,
+          "recall": 0.2962962962962963,
+          "f1-score": 0.24012345679012345,
+          "support": 17.0
         },
         "weighted avg": {
-          "precision": 0.5666666666666667,
-          "recall": 0.6666666666666666,
-          "f1-score": 0.6005291005291005,
-          "support": 18.0
+          "precision": 0.34733893557422973,
+          "recall": 0.35294117647058826,
+          "f1-score": 0.3013071895424837,
+          "support": 17.0
         }
       }
     },
     {
       "model": "Random Forest",
-      "accuracy": 0.6111,
-      "macro_precision": 0.5111,
-      "macro_recall": 0.5833,
-      "macro_f1": 0.5148,
-      "weighted_precision": 0.5222,
-      "weighted_recall": 0.6111,
-      "weighted_f1": 0.5333,
-      "cv_macro_f1": 0.5432,
+      "accuracy": 0.7059,
+      "macro_precision": 0.5481,
+      "macro_recall": 0.6296,
+      "macro_f1": 0.5796,
+      "weighted_precision": 0.5961,
+      "weighted_recall": 0.7059,
+      "weighted_f1": 0.6382,
       "classification_report": {
         "AI_ML": {
           "precision": 1.0,
@@ -370,25 +286,25 @@
           "precision": 0.0,
           "recall": 0.0,
           "f1-score": 0.0,
-          "support": 2.0
+          "support": 1.0
         },
         "BUSINESS": {
-          "precision": 0.3333333333333333,
-          "recall": 1.0,
-          "f1-score": 0.5,
-          "support": 2.0
-        },
-        "DATA": {
-          "precision": 0.6,
-          "recall": 0.75,
-          "f1-score": 0.6666666666666666,
-          "support": 4.0
-        },
-        "FRONTEND": {
           "precision": 0.6666666666666666,
           "recall": 1.0,
           "f1-score": 0.8,
           "support": 2.0
+        },
+        "DATA": {
+          "precision": 0.6,
+          "recall": 1.0,
+          "f1-score": 0.75,
+          "support": 3.0
+        },
+        "FRONTEND": {
+          "precision": 0.6666666666666666,
+          "recall": 0.6666666666666666,
+          "f1-score": 0.6666666666666666,
+          "support": 3.0
         },
         "FULLSTACK": {
           "precision": 0.0,
@@ -404,35 +320,34 @@
         },
         "QA": {
           "precision": 1.0,
-          "recall": 0.5,
-          "f1-score": 0.6666666666666666,
+          "recall": 1.0,
+          "f1-score": 1.0,
           "support": 2.0
         },
-        "accuracy": 0.6111111111111112,
+        "accuracy": 0.7058823529411765,
         "macro avg": {
-          "precision": 0.5111111111111111,
-          "recall": 0.5833333333333334,
-          "f1-score": 0.5148148148148148,
-          "support": 18.0
+          "precision": 0.5481481481481482,
+          "recall": 0.6296296296296295,
+          "f1-score": 0.5796296296296296,
+          "support": 17.0
         },
         "weighted avg": {
-          "precision": 0.5222222222222223,
-          "recall": 0.6111111111111112,
-          "f1-score": 0.5333333333333333,
-          "support": 18.0
+          "precision": 0.596078431372549,
+          "recall": 0.7058823529411765,
+          "f1-score": 0.638235294117647,
+          "support": 17.0
         }
       }
     },
     {
       "model": "Gradient Boosting",
-      "accuracy": 0.8889,
-      "macro_precision": 0.8519,
-      "macro_recall": 0.8889,
-      "macro_f1": 0.8667,
-      "weighted_precision": 0.8148,
-      "weighted_recall": 0.8889,
-      "weighted_f1": 0.8444,
-      "cv_macro_f1": 0.7192,
+      "accuracy": 0.9412,
+      "macro_precision": 0.9444,
+      "macro_recall": 0.963,
+      "macro_f1": 0.9407,
+      "weighted_precision": 0.9706,
+      "weighted_recall": 0.9412,
+      "weighted_f1": 0.9451,
       "classification_report": {
         "AI_ML": {
           "precision": 1.0,
@@ -447,10 +362,10 @@
           "support": 2.0
         },
         "BI": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1-score": 0.0,
-          "support": 2.0
+          "precision": 0.5,
+          "recall": 1.0,
+          "f1-score": 0.6666666666666666,
+          "support": 1.0
         },
         "BUSINESS": {
           "precision": 1.0,
@@ -459,16 +374,16 @@
           "support": 2.0
         },
         "DATA": {
-          "precision": 0.6666666666666666,
-          "recall": 1.0,
+          "precision": 1.0,
+          "recall": 0.6666666666666666,
           "f1-score": 0.8,
-          "support": 4.0
+          "support": 3.0
         },
         "FRONTEND": {
           "precision": 1.0,
           "recall": 1.0,
           "f1-score": 1.0,
-          "support": 2.0
+          "support": 3.0
         },
         "FULLSTACK": {
           "precision": 1.0,
@@ -488,138 +403,136 @@
           "f1-score": 1.0,
           "support": 2.0
         },
-        "accuracy": 0.8888888888888888,
+        "accuracy": 0.9411764705882353,
         "macro avg": {
-          "precision": 0.8518518518518517,
-          "recall": 0.8888888888888888,
-          "f1-score": 0.8666666666666667,
-          "support": 18.0
+          "precision": 0.9444444444444444,
+          "recall": 0.9629629629629629,
+          "f1-score": 0.9407407407407408,
+          "support": 17.0
         },
         "weighted avg": {
-          "precision": 0.8148148148148148,
-          "recall": 0.8888888888888888,
-          "f1-score": 0.8444444444444444,
-          "support": 18.0
+          "precision": 0.9705882352941176,
+          "recall": 0.9411764705882353,
+          "f1-score": 0.9450980392156862,
+          "support": 17.0
         }
       }
     }
   ],
   "best_model": {
     "name": "Gradient Boosting",
-    "accuracy": 0.8889,
-    "macro_precision": 0.8519,
-    "macro_recall": 0.8889,
-    "macro_f1": 0.8667,
-    "weighted_f1": 0.8444,
-    "cv_macro_f1": 0.7192
+    "accuracy": 0.9412,
+    "macro_precision": 0.9444,
+    "macro_recall": 0.963,
+    "macro_f1": 0.9407,
+    "weighted_f1": 0.9451
   },
   "feature_importance": [
     {
       "feature": "text__cu react",
-      "importance": 0.129866
+      "importance": 0.118117
     },
     {
       "feature": "text__data",
-      "importance": 0.115934
+      "importance": 0.110636
     },
     {
       "feature": "text__precum python",
-      "importance": 0.082548
+      "importance": 0.085004
     },
     {
       "feature": "text__testing",
-      "importance": 0.082287
+      "importance": 0.084746
     },
     {
       "feature": "text__business analysis",
-      "importance": 0.077468
-    },
-    {
-      "feature": "text__dashboard design",
-      "importance": 0.063696
-    },
-    {
-      "feature": "text__backend",
-      "importance": 0.046417
-    },
-    {
-      "feature": "text__management excel",
-      "importance": 0.044414
-    },
-    {
-      "feature": "text__management responsabilitățile",
-      "importance": 0.043441
-    },
-    {
-      "feature": "text__analysis",
-      "importance": 0.038546
-    },
-    {
-      "feature": "text__stack",
-      "importance": 0.037927
-    },
-    {
-      "feature": "text__precum java",
-      "importance": 0.03208
-    },
-    {
-      "feature": "text__api design",
-      "importance": 0.023225
-    },
-    {
-      "feature": "text__dashboard",
-      "importance": 0.018617
-    },
-    {
-      "feature": "text__java",
-      "importance": 0.015779
-    },
-    {
-      "feature": "text__python",
-      "importance": 0.009151
-    },
-    {
-      "feature": "text__management",
-      "importance": 0.007702
-    },
-    {
-      "feature": "text__node",
-      "importance": 0.006517
-    },
-    {
-      "feature": "text__apis typescript",
-      "importance": 0.005928
-    },
-    {
-      "feature": "text__css",
-      "importance": 0.004843
-    },
-    {
-      "feature": "text__cu java",
-      "importance": 0.004843
-    },
-    {
-      "feature": "text__sql",
-      "importance": 0.004414
-    },
-    {
-      "feature": "text__pentru nivel",
-      "importance": 0.004109
-    },
-    {
-      "feature": "text__statistical",
-      "importance": 0.004006
+      "importance": 0.078153
     },
     {
       "feature": "text__power",
-      "importance": 0.003825
+      "importance": 0.059766
+    },
+    {
+      "feature": "text__api design",
+      "importance": 0.051344
+    },
+    {
+      "feature": "text__management responsabilitățile",
+      "importance": 0.044405
+    },
+    {
+      "feature": "text__stack",
+      "importance": 0.04314
+    },
+    {
+      "feature": "text__precum java",
+      "importance": 0.033284
+    },
+    {
+      "feature": "text__cu java",
+      "importance": 0.030932
+    },
+    {
+      "feature": "text__excel",
+      "importance": 0.024169
+    },
+    {
+      "feature": "text__project management",
+      "importance": 0.017312
+    },
+    {
+      "feature": "text__backend",
+      "importance": 0.015777
+    },
+    {
+      "feature": "text__bi tableau",
+      "importance": 0.013607
+    },
+    {
+      "feature": "text__management excel",
+      "importance": 0.012822
+    },
+    {
+      "feature": "numeric__difficulty_score",
+      "importance": 0.012517
+    },
+    {
+      "feature": "text__git html",
+      "importance": 0.010344
+    },
+    {
+      "feature": "text__reporting excel",
+      "importance": 0.009762
+    },
+    {
+      "feature": "text__data visualization",
+      "importance": 0.008259
+    },
+    {
+      "feature": "text__management",
+      "importance": 0.008159
+    },
+    {
+      "feature": "text__communication coordination",
+      "importance": 0.008121
+    },
+    {
+      "feature": "text__coordination",
+      "importance": 0.007211
+    },
+    {
+      "feature": "text__operations reporting",
+      "importance": 0.005844
+    },
+    {
+      "feature": "text__junior și",
+      "importance": 0.005226
     }
   ],
   "artifacts": {
     "model_path": "/Users/cristina-pop/skilltrack/backend/ml/models/job_category_model.pkl",
     "metrics_path": "/Users/cristina-pop/skilltrack/backend/ml/models/model_metrics.json",
-    "confusion_matrix_path": "/Users/cristina-pop/skilltrack/backend/ml/models/confusion_matrix.png",
-    "decision_tree_preview_path": null
+    "confusion_matrix_path": "/Users/cristina-pop/skilltrack/backend/ml/models/confusion_matrix.png"
   },
-  "methodology_note": "Modelul a fost antrenat ca problemă de clasificare multiclasă, folosind train/test split, vectorizare TF-IDF pentru text, encoding pentru variabile categorice și evaluare prin accuracy, precision, recall și F1-score."
+  "methodology_note": "Modelul a fost antrenat ca problemă de clasificare multiclasă. Descrierile joburilor au fost transformate prin TF-IDF, variabilele categorice au fost codificate, iar modelele au fost evaluate prin Accuracy, Precision, Recall și F1-score. Modelul final integrat în aplicație este Gradient Boosting."
 }

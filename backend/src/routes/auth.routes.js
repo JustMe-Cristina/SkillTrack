@@ -316,52 +316,7 @@ router.get("/me", auth, async (req, res) => {
     });
   }
 });
-router.get("/me", auth, async (req, res) => {
-  try {
-    const userId = req.user.id;
 
-    const [users] = await db.query(
-      `
-      SELECT
-        id,
-        name,
-        email,
-        city,
-        university,
-        specialization,
-        study_year,
-        target_role,
-        preferred_work_mode,
-        preferred_employment_type,
-        bio,
-        created_at
-      FROM users
-      WHERE id = ?
-      LIMIT 1
-      `,
-      [userId]
-    );
-
-    if (users.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        error: "User not found"
-      });
-    }
-
-    return res.json({
-      ok: true,
-      user: users[0]
-    });
-  } catch (err) {
-    console.error("ME ERROR:", err);
-
-    return res.status(500).json({
-      ok: false,
-      error: "Server error"
-    });
-  }
-});
 /* FORGOT PASSWORD */
 router.post("/forgot-password", async (req, res) => {
   try {
@@ -413,10 +368,9 @@ router.post("/forgot-password", async (req, res) => {
     });
 
     return res.json({
-      ok: true,
-      message: "Dacă emailul există, vei primi un link de resetare.",
-      devResetLink: `${process.env.FRONTEND_URL || "http://localhost:5175"}/reset-password/${resetToken}`,
-    });
+  ok: true,
+  message: "Dacă emailul există, vei primi un link de resetare.",
+});
   } catch (err) {
     console.error("FORGOT PASSWORD ERROR:", err);
 

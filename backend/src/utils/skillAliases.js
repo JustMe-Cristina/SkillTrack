@@ -1,5 +1,4 @@
 const skillAliases = {
-  // ── Data / BI ────────────────────────────────────────────────────
   SQL: [
     "sql",
     "structured query language",
@@ -163,7 +162,6 @@ const skillAliases = {
     "metadata"
   ],
 
-  // ── AI / ML ──────────────────────────────────────────────────────
   "Machine Learning": [
     "machine learning",
     "ml model",
@@ -199,7 +197,6 @@ const skillAliases = {
 
   Seaborn: ["seaborn"],
 
-  // ── DevOps / Tools ───────────────────────────────────────────────
   Docker: [
     "docker",
     "containerization",
@@ -246,7 +243,6 @@ const skillAliases = {
     "unix scripting"
   ],
 
-  // ── Development ──────────────────────────────────────────────────
   JavaScript: [
     "javascript",
     "java script",
@@ -323,7 +319,6 @@ const skillAliases = {
     "search algorithms"
   ],
 
-  // ── Business / Product / PM ──────────────────────────────────────
   "Business Analysis": [
     "business analysis",
     "business analyst",

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ML_DIR = Path(__file__).resolve().parent
 DATA_DIR = ML_DIR / "data"
+DATASET_PATH = DATA_DIR / "jobs_ml_dataset.csv"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -31,10 +32,11 @@ def parse_technologies(value):
         return ""
 
     if isinstance(value, list):
-        return " ".join(value)
+        return " ".join(str(item) for item in value)
 
     try:
         parsed = json.loads(value)
+
         if isinstance(parsed, list):
             return " ".join(str(item) for item in parsed)
     except Exception:
@@ -50,8 +52,6 @@ def main():
         SELECT
             j.id,
             j.title,
-            j.company,
-            j.location,
             j.work_mode,
             j.employment_type,
             j.seniority,
@@ -67,8 +67,6 @@ def main():
         GROUP BY
             j.id,
             j.title,
-            j.company,
-            j.location,
             j.work_mode,
             j.employment_type,
             j.seniority,
@@ -79,11 +77,13 @@ def main():
         ORDER BY j.id;
     """
 
-    df = pd.read_sql(query, connection)
-    connection.close()
+    try:
+        df = pd.read_sql(query, connection)
+    finally:
+        connection.close()
 
     if df.empty:
-        raise ValueError("Nu există joburi cu category în baza de date.")
+        raise ValueError("Nu există joburi etichetate cu category în baza de date.")
 
     df["skills"] = df["skills"].fillna("")
     df["technologies"] = df["technologies_json"].apply(parse_technologies)
@@ -98,12 +98,22 @@ def main():
         + df["technologies"].fillna("")
     )
 
-    output_path = DATA_DIR / "jobs_ml_dataset.csv"
-    df.to_csv(output_path, index=False)
+    df = df[
+        [
+            "text_features",
+            "work_mode",
+            "employment_type",
+            "seniority",
+            "difficulty_score",
+            "category",
+        ]
+    ]
 
-    print("✅ Dataset ML exportat cu succes.")
-    print(f"Fișier: {output_path}")
-    print(f"Număr joburi: {len(df)}")
+    df.to_csv(DATASET_PATH, index=False)
+
+    print("Dataset ML exportat cu succes.")
+    print(f"Fișier: {DATASET_PATH}")
+    print(f"Joburi exportate: {len(df)}")
     print("\nDistribuție categorii:")
     print(df["category"].value_counts())
 

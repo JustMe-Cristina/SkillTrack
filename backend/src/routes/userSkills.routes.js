@@ -8,6 +8,7 @@ const {
 const router = express.Router();
 
 const VALID_LEVELS = [1, 2, 3];
+const VALID_CONFIDENCE = [1, 2, 3, 4, 5];
 
 function normalizeLevel(value, fallback = 2) {
   const level = Number(value);
@@ -16,18 +17,21 @@ function normalizeLevel(value, fallback = 2) {
 
 function normalizeConfidence(value, fallback = 3) {
   const confidence = Number(value);
-  if ([1, 2, 3, 4, 5].includes(confidence)) return confidence;
-  return fallback;
+  return VALID_CONFIDENCE.includes(confidence)
+    ? confidence
+    : fallback;
 }
 
 function normalizeSkillId(value) {
   const skillId = Number(value);
-  return Number.isInteger(skillId) && skillId > 0 ? skillId : null;
+  return Number.isInteger(skillId) && skillId > 0
+    ? skillId
+    : null;
 }
 
 async function userHasSkill(userId, skillId) {
   const [rows] = await db.query(
-    `SELECT user_id, skill_id
+    `SELECT 1
      FROM user_skills
      WHERE user_id = ? AND skill_id = ?
      LIMIT 1`,
@@ -37,11 +41,10 @@ async function userHasSkill(userId, skillId) {
   return rows.length > 0;
 }
 
-// GET /api/user-skills
 router.get("/", auth, async (req, res) => {
-  try {
-    const userId = req.user.userId;
+  const userId = req.user.userId;
 
+  try {
     const [rows] = await db.query(
       `SELECT
          us.user_id,
@@ -54,9 +57,10 @@ router.get("/", auth, async (req, res) => {
          s.name,
          s.category
        FROM user_skills us
-       JOIN skills s ON s.id = us.skill_id
+       JOIN skills s
+         ON s.id = us.skill_id
        WHERE us.user_id = ?
-       ORDER BY s.category, s.name`,
+       ORDER BY s.category ASC, s.name ASC`,
       [userId]
     );
 
@@ -74,13 +78,23 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// POST /api/user-skills
 router.post("/", auth, async (req, res) => {
+  const userId = req.user.userId;
+
   try {
-    const userId = req.user.userId;
-    const skillId = normalizeSkillId(req.body.skillId ?? req.body.skill_id);
-    const level = normalizeLevel(req.body.level ?? req.body.current_level, 2);
-    const confidence = normalizeConfidence(req.body.confidence, 3);
+    const skillId = normalizeSkillId(
+      req.body.skillId ?? req.body.skill_id
+    );
+
+    const level = normalizeLevel(
+      req.body.level ?? req.body.current_level,
+      2
+    );
+
+    const confidence = normalizeConfidence(
+      req.body.confidence,
+      3
+    );
 
     if (!skillId) {
       return res.status(400).json({
@@ -90,7 +104,7 @@ router.post("/", auth, async (req, res) => {
     }
 
     const [skills] = await db.query(
-      `SELECT id, name
+      `SELECT id
        FROM skills
        WHERE id = ?
        LIMIT 1`,
@@ -100,25 +114,32 @@ router.post("/", auth, async (req, res) => {
     if (skills.length === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Competența nu există în catalog."
+        error: "Competența nu există."
       });
     }
 
-    const alreadyExists = await userHasSkill(userId, skillId);
-
-    if (alreadyExists) {
+    if (await userHasSkill(userId, skillId)) {
       await db.query(
         `UPDATE user_skills
-         SET level = ?, confidence = ?
-         WHERE user_id = ? AND skill_id = ?`,
-        [level, confidence, userId, skillId]
+         SET
+           level = ?,
+           confidence = ?
+         WHERE user_id = ?
+           AND skill_id = ?`,
+        [
+          level,
+          confidence,
+          userId,
+          skillId
+        ]
       );
 
-      const updatedJobs = await recalculateAllJobScoresForUser(userId);
+      const updatedJobs =
+        await recalculateAllJobScoresForUser(userId);
 
       return res.json({
         ok: true,
-        message: "Competența exista deja, iar nivelul a fost actualizat.",
+        message: "Competența a fost actualizată.",
         skillId,
         level,
         confidence,
@@ -134,10 +155,16 @@ router.post("/", auth, async (req, res) => {
          confidence
        )
        VALUES (?, ?, ?, ?)`,
-      [userId, skillId, level, confidence]
+      [
+        userId,
+        skillId,
+        level,
+        confidence
+      ]
     );
 
-    const updatedJobs = await recalculateAllJobScoresForUser(userId);
+    const updatedJobs =
+      await recalculateAllJobScoresForUser(userId);
 
     return res.status(201).json({
       ok: true,
@@ -158,10 +185,16 @@ router.post("/", auth, async (req, res) => {
 });
 
 async function updateUserSkill(req, res) {
+  const userId = req.user.userId;
+
   try {
-    const userId = req.user.userId;
     const skillId = normalizeSkillId(req.params.skillId);
-    const level = normalizeLevel(req.body.level ?? req.body.current_level, null);
+
+    const level = normalizeLevel(
+      req.body.level ?? req.body.current_level,
+      null
+    );
+
     const confidence =
       req.body.confidence !== undefined
         ? normalizeConfidence(req.body.confidence, 3)
@@ -177,7 +210,7 @@ async function updateUserSkill(req, res) {
     if (!level) {
       return res.status(400).json({
         ok: false,
-        error: "Nivel invalid. Nivelurile acceptate sunt 1, 2 sau 3."
+        error: "Nivel invalid."
       });
     }
 
@@ -186,27 +219,41 @@ async function updateUserSkill(req, res) {
     if (confidence !== null) {
       [result] = await db.query(
         `UPDATE user_skills
-         SET level = ?, confidence = ?
-         WHERE user_id = ? AND skill_id = ?`,
-        [level, confidence, userId, skillId]
+         SET
+           level = ?,
+           confidence = ?
+         WHERE user_id = ?
+           AND skill_id = ?`,
+        [
+          level,
+          confidence,
+          userId,
+          skillId
+        ]
       );
     } else {
       [result] = await db.query(
         `UPDATE user_skills
          SET level = ?
-         WHERE user_id = ? AND skill_id = ?`,
-        [level, userId, skillId]
+         WHERE user_id = ?
+           AND skill_id = ?`,
+        [
+          level,
+          userId,
+          skillId
+        ]
       );
     }
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Competența nu a fost găsită în profilul tău."
+        error: "Competența nu a fost găsită."
       });
     }
 
-    const updatedJobs = await recalculateAllJobScoresForUser(userId);
+    const updatedJobs =
+      await recalculateAllJobScoresForUser(userId);
 
     return res.json({
       ok: true,
@@ -229,10 +276,10 @@ async function updateUserSkill(req, res) {
 router.patch("/:skillId", auth, updateUserSkill);
 router.put("/:skillId", auth, updateUserSkill);
 
-// DELETE /api/user-skills/:skillId
 router.delete("/:skillId", auth, async (req, res) => {
+  const userId = req.user.userId;
+
   try {
-    const userId = req.user.userId;
     const skillId = normalizeSkillId(req.params.skillId);
 
     if (!skillId) {
@@ -243,19 +290,25 @@ router.delete("/:skillId", auth, async (req, res) => {
     }
 
     const [result] = await db.query(
-      `DELETE FROM user_skills
-       WHERE user_id = ? AND skill_id = ?`,
-      [userId, skillId]
+      `DELETE
+       FROM user_skills
+       WHERE user_id = ?
+         AND skill_id = ?`,
+      [
+        userId,
+        skillId
+      ]
     );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Competența nu a fost găsită în profilul tău."
+        error: "Competența nu a fost găsită."
       });
     }
 
-    const updatedJobs = await recalculateAllJobScoresForUser(userId);
+    const updatedJobs =
+      await recalculateAllJobScoresForUser(userId);
 
     return res.json({
       ok: true,

@@ -12,7 +12,6 @@ const skillsRoutes = require("./routes/skills.routes");
 const cvRoutes = require("./routes/cv.routes");
 const roadmapsRoutes = require("./routes/roadmaps.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
-const userRoutes = require("./routes/user.routes");
 const mlRoutes = require("./routes/ml.routes");
 const profileRoutes = require("./routes/profile.routes");
 
@@ -71,7 +70,6 @@ app.use("/api/skills", skillsRoutes);
 app.use("/api/cv", cvRoutes);
 app.use("/api/roadmaps", roadmapsRoutes);
 app.use("/api/analytics", analyticsRoutes);
-app.use("/api/user", userRoutes);
 app.use("/api/ml", mlRoutes);
 app.use("/api/profile", profileRoutes);
 

@@ -100,7 +100,6 @@ function detectExperienceRequirement(description) {
   const text = normalizeText(description);
 
   const patterns = [
-    // 2+ years / 2+ ani
     {
       regex: /(\d+)\s*\+\s*(years?|yrs?|ani|an)\b/i,
       mapper: (match) => ({
@@ -108,8 +107,6 @@ function detectExperienceRequirement(description) {
         label: `${match[1]}+ ani`
       })
     },
-
-    // +2 years / +2 ani
     {
       regex: /\+\s*(\d+)\s*(years?|yrs?|ani|an)\b/i,
       mapper: (match) => ({
@@ -118,7 +115,6 @@ function detectExperienceRequirement(description) {
       })
     },
 
-    // 2 plus years
     {
       regex: /(\d+)\s*plus\s*(years?|yrs?|ani|an)\b/i,
       mapper: (match) => ({
@@ -127,7 +123,6 @@ function detectExperienceRequirement(description) {
       })
     },
 
-    // minimum 2 years / minim 2 ani
     {
       regex: /(minimum|minim)\s*(of)?\s*(\d+)\s*(years?|yrs?|ani|an)\b/i,
       mapper: (match) => ({
@@ -136,7 +131,6 @@ function detectExperienceRequirement(description) {
       })
     },
 
-    // at least 2 years
     {
       regex: /at\s+least\s+(\d+)\s*(years?|yrs?|ani|an)\b/i,
       mapper: (match) => ({
@@ -144,8 +138,6 @@ function detectExperienceRequirement(description) {
         label: `${match[1]}+ ani`
       })
     },
-
-    // 3-5 years / 3–5 ani
     {
       regex: /(\d+)\s*[-–]\s*(\d+)\s*(years?|yrs?|ani|an)\b/i,
       mapper: (match) => ({
@@ -153,8 +145,6 @@ function detectExperienceRequirement(description) {
         label: `${match[1]}-${match[2]} ani`
       })
     },
-
-    // experience of 2 years
     {
       regex: /experience\s*(of)?\s*(\d+)\s*(years?|yrs?)\b/i,
       mapper: (match) => ({

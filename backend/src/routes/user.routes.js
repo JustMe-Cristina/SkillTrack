@@ -1,75 +1,76 @@
 const express = require("express");
-const router = express.Router();
 const db = require("../config/db");
 const auth = require("../middleware/auth.middleware");
 
-/**
- * GET /api/user/profile
- * Returnează profilul utilizatorului + sumar cont
- */
+const router = express.Router();
+
+const ALLOWED_WORK_MODES = ["REMOTE", "HYBRID", "ONSITE"];
+const ALLOWED_EMPLOYMENT_TYPES = ["INTERNSHIP", "PART_TIME", "FULL_TIME"];
+
+function cleanText(value) {
+  const text = String(value || "").trim();
+  return text.length > 0 ? text : null;
+}
+
+function toBoolean(value) {
+  return value ? 1 : 0;
+}
+
 router.get("/profile", auth, async (req, res) => {
   const userId = req.user.userId;
 
   try {
     const [users] = await db.query(
-      `
-      SELECT
-        id,
-        name,
-        email,
-        headline,
-        city,
-        university,
-        specialization,
-        study_year,
-        target_role,
-        preferred_work_mode,
-        preferred_employment_type,
-        bio,
-        monthly_report_enabled,
-        email_notifications_enabled,
-        job_recommendations_enabled
-      FROM users
-      WHERE id = ?
-      `,
+      `SELECT
+         id,
+         name,
+         email,
+         headline,
+         city,
+         university,
+         specialization,
+         study_year,
+         target_role,
+         preferred_work_mode,
+         preferred_employment_type,
+         bio,
+         monthly_report_enabled,
+         email_notifications_enabled,
+         job_recommendations_enabled
+       FROM users
+       WHERE id = ?`,
       [userId]
     );
 
     if (users.length === 0) {
       return res.status(404).json({
         ok: false,
-        message: "Utilizatorul nu a fost găsit."
+        error: "Utilizatorul nu a fost găsit."
       });
     }
 
     const profile = users[0];
 
     const [[skillsStats]] = await db.query(
-      `
-      SELECT COUNT(*) AS total_skills
-      FROM user_skills
-      WHERE user_id = ?
-      `,
+      `SELECT COUNT(*) AS total_skills
+       FROM user_skills
+       WHERE user_id = ?`,
       [userId]
     );
 
     const [[jobsStats]] = await db.query(
-      `
-      SELECT COUNT(*) AS saved_jobs
-      FROM jobs
-      WHERE user_id = ?
-      `,
+      `SELECT COUNT(*) AS saved_jobs
+       FROM jobs
+       WHERE user_id = ?`,
       [userId]
     );
 
     const [[roadmapsStats]] = await db.query(
-      `
-      SELECT
-        COUNT(*) AS roadmaps_count,
-        SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_roadmaps
-      FROM roadmaps
-      WHERE user_id = ?
-      `,
+      `SELECT
+         COUNT(*) AS roadmaps_count,
+         SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_roadmaps
+       FROM roadmaps
+       WHERE user_id = ?`,
       [userId]
     );
 
@@ -80,23 +81,21 @@ router.get("/profile", auth, async (req, res) => {
         total_skills: Number(skillsStats.total_skills || 0),
         saved_jobs: Number(jobsStats.saved_jobs || 0),
         roadmaps_count: Number(roadmapsStats.roadmaps_count || 0),
-        completed_roadmaps: Number(roadmapsStats.completed_roadmaps || 0)
+        completed_roadmaps: Number(
+          roadmapsStats.completed_roadmaps || 0
+        )
       }
     });
-  } catch (error) {
-    console.error("GET PROFILE ERROR:", error);
+  } catch (err) {
+    console.error("GET PROFILE ERROR:", err);
+
     return res.status(500).json({
       ok: false,
-      message: "A apărut o eroare la încărcarea profilului.",
-      error: error.message
+      error: "Nu s-a putut încărca profilul."
     });
   }
 });
 
-/**
- * PATCH /api/user/profile
- * Actualizează profilul utilizatorului
- */
 router.patch("/profile", auth, async (req, res) => {
   const userId = req.user.userId;
 
@@ -116,146 +115,141 @@ router.patch("/profile", auth, async (req, res) => {
     job_recommendations_enabled
   } = req.body;
 
-  const allowedWorkModes = ["REMOTE", "HYBRID", "ONSITE"];
-  const allowedEmploymentTypes = ["INTERNSHIP", "PART_TIME", "FULL_TIME"];
-
-  const fields = [];
-  const values = [];
-
   try {
+    const updates = [];
+    const values = [];
+
     if (name !== undefined) {
-      if (!String(name).trim()) {
+      const cleaned = cleanText(name);
+
+      if (!cleaned) {
         return res.status(400).json({
           ok: false,
-          message: "Numele nu poate fi gol."
+          error: "Numele nu poate fi gol."
         });
       }
 
-      fields.push("name = ?");
-      values.push(String(name).trim());
+      updates.push("name = ?");
+      values.push(cleaned);
     }
 
     if (headline !== undefined) {
-      fields.push("headline = ?");
-      values.push(headline ? String(headline).trim() : null);
+      updates.push("headline = ?");
+      values.push(cleanText(headline));
     }
 
     if (city !== undefined) {
-      fields.push("city = ?");
-      values.push(city ? String(city).trim() : null);
+      updates.push("city = ?");
+      values.push(cleanText(city));
     }
 
     if (university !== undefined) {
-      fields.push("university = ?");
-      values.push(university ? String(university).trim() : null);
+      updates.push("university = ?");
+      values.push(cleanText(university));
     }
 
     if (specialization !== undefined) {
-      fields.push("specialization = ?");
-      values.push(specialization ? String(specialization).trim() : null);
+      updates.push("specialization = ?");
+      values.push(cleanText(specialization));
     }
 
     if (study_year !== undefined) {
-      fields.push("study_year = ?");
-      values.push(study_year ? String(study_year).trim() : null);
+      updates.push("study_year = ?");
+      values.push(cleanText(study_year));
     }
 
     if (target_role !== undefined) {
-      fields.push("target_role = ?");
-      values.push(target_role ? String(target_role).trim() : null);
+      updates.push("target_role = ?");
+      values.push(cleanText(target_role));
     }
 
     if (preferred_work_mode !== undefined) {
       if (
-        preferred_work_mode !== null &&
-        preferred_work_mode !== "" &&
-        !allowedWorkModes.includes(preferred_work_mode)
+        preferred_work_mode &&
+        !ALLOWED_WORK_MODES.includes(preferred_work_mode)
       ) {
         return res.status(400).json({
           ok: false,
-          message: "Work mode invalid."
+          error: "Work mode invalid."
         });
       }
 
-      fields.push("preferred_work_mode = ?");
+      updates.push("preferred_work_mode = ?");
       values.push(preferred_work_mode || null);
     }
 
     if (preferred_employment_type !== undefined) {
       if (
-        preferred_employment_type !== null &&
-        preferred_employment_type !== "" &&
-        !allowedEmploymentTypes.includes(preferred_employment_type)
+        preferred_employment_type &&
+        !ALLOWED_EMPLOYMENT_TYPES.includes(
+          preferred_employment_type
+        )
       ) {
         return res.status(400).json({
           ok: false,
-          message: "Tip de angajare invalid."
+          error: "Tip de angajare invalid."
         });
       }
 
-      fields.push("preferred_employment_type = ?");
+      updates.push("preferred_employment_type = ?");
       values.push(preferred_employment_type || null);
     }
 
     if (bio !== undefined) {
-      fields.push("bio = ?");
-      values.push(bio ? String(bio).trim() : null);
+      updates.push("bio = ?");
+      values.push(cleanText(bio));
     }
 
     if (monthly_report_enabled !== undefined) {
-      fields.push("monthly_report_enabled = ?");
-      values.push(monthly_report_enabled ? 1 : 0);
+      updates.push("monthly_report_enabled = ?");
+      values.push(toBoolean(monthly_report_enabled));
     }
 
     if (email_notifications_enabled !== undefined) {
-      fields.push("email_notifications_enabled = ?");
-      values.push(email_notifications_enabled ? 1 : 0);
+      updates.push("email_notifications_enabled = ?");
+      values.push(toBoolean(email_notifications_enabled));
     }
 
     if (job_recommendations_enabled !== undefined) {
-      fields.push("job_recommendations_enabled = ?");
-      values.push(job_recommendations_enabled ? 1 : 0);
+      updates.push("job_recommendations_enabled = ?");
+      values.push(toBoolean(job_recommendations_enabled));
     }
 
-    if (fields.length === 0) {
+    if (updates.length === 0) {
       return res.status(400).json({
         ok: false,
-        message: "Nu există câmpuri de actualizat."
+        error: "Nu există câmpuri de actualizat."
       });
     }
 
     values.push(userId);
 
     await db.query(
-      `
-      UPDATE users
-      SET ${fields.join(", ")}
-      WHERE id = ?
-      `,
+      `UPDATE users
+       SET ${updates.join(", ")}
+       WHERE id = ?`,
       values
     );
 
     const [updatedUsers] = await db.query(
-      `
-      SELECT
-        id,
-        name,
-        email,
-        headline,
-        city,
-        university,
-        specialization,
-        study_year,
-        target_role,
-        preferred_work_mode,
-        preferred_employment_type,
-        bio,
-        monthly_report_enabled,
-        email_notifications_enabled,
-        job_recommendations_enabled
-      FROM users
-      WHERE id = ?
-      `,
+      `SELECT
+         id,
+         name,
+         email,
+         headline,
+         city,
+         university,
+         specialization,
+         study_year,
+         target_role,
+         preferred_work_mode,
+         preferred_employment_type,
+         bio,
+         monthly_report_enabled,
+         email_notifications_enabled,
+         job_recommendations_enabled
+       FROM users
+       WHERE id = ?`,
       [userId]
     );
 
@@ -264,12 +258,12 @@ router.patch("/profile", auth, async (req, res) => {
       message: "Profil actualizat cu succes.",
       profile: updatedUsers[0]
     });
-  } catch (error) {
-    console.error("PATCH PROFILE ERROR:", error);
+  } catch (err) {
+    console.error("PATCH PROFILE ERROR:", err);
+
     return res.status(500).json({
       ok: false,
-      message: "A apărut o eroare la actualizarea profilului.",
-      error: error.message
+      error: "Nu s-a putut actualiza profilul."
     });
   }
 });

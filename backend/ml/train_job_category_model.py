@@ -15,12 +15,11 @@ from sklearn.metrics import (
     confusion_matrix,
     precision_recall_fscore_support,
 )
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
-from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 
@@ -35,12 +34,17 @@ MODELS_DIR = ML_DIR / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 DATASET_PATH = DATA_DIR / "jobs_ml_dataset.csv"
+MODEL_PATH = MODELS_DIR / "job_category_model.pkl"
+METRICS_PATH = MODELS_DIR / "model_metrics.json"
+CONFUSION_MATRIX_PATH = MODELS_DIR / "confusion_matrix.png"
+
+FINAL_MODEL_NAME = "Gradient Boosting"
 
 
 def load_dataset():
     if not DATASET_PATH.exists():
         raise FileNotFoundError(
-            f"Nu există {DATASET_PATH}. Rulează întâi export_jobs_dataset.py"
+            f"Nu există {DATASET_PATH}. Rulează întâi export_jobs_dataset.py."
         )
 
     df = pd.read_csv(DATASET_PATH)
@@ -55,14 +59,16 @@ def load_dataset():
     ]
 
     missing = [column for column in required_columns if column not in df.columns]
+
     if missing:
-        raise ValueError(f"Lipsesc coloanele: {missing}")
+        raise ValueError(f"Lipsesc coloanele obligatorii: {missing}")
 
     df["text_features"] = df["text_features"].fillna("")
     df["work_mode"] = df["work_mode"].fillna("UNKNOWN")
     df["employment_type"] = df["employment_type"].fillna("UNKNOWN")
     df["seniority"] = df["seniority"].fillna("UNKNOWN")
     df["difficulty_score"] = df["difficulty_score"].fillna(0)
+    df["category"] = df["category"].astype(str)
 
     return df
 
@@ -103,7 +109,6 @@ def build_models():
             random_state=42,
         ),
         "Naive Bayes": MultinomialNB(),
-        "KNN": KNeighborsClassifier(n_neighbors=3),
         "Decision Tree": DecisionTreeClassifier(
             max_depth=5,
             min_samples_leaf=2,
@@ -125,10 +130,19 @@ def build_models():
     }
 
 
+def build_pipeline(model):
+    return Pipeline(
+        steps=[
+            ("preprocessor", build_preprocessor()),
+            ("model", model),
+        ]
+    )
+
+
 def evaluate_model(name, pipeline, x_train, x_test, y_train, y_test):
     pipeline.fit(x_train, y_train)
-    y_pred = pipeline.predict(x_test)
 
+    y_pred = pipeline.predict(x_test)
     accuracy = accuracy_score(y_test, y_pred)
 
     macro_precision, macro_recall, macro_f1, _ = precision_recall_fscore_support(
@@ -145,18 +159,6 @@ def evaluate_model(name, pipeline, x_train, x_test, y_train, y_test):
         zero_division=0,
     )
 
-    try:
-        cv_scores = cross_val_score(
-            pipeline,
-            pd.concat([x_train, x_test]),
-            pd.concat([y_train, y_test]),
-            cv=3,
-            scoring="f1_macro",
-        )
-        cv_macro_f1 = float(np.mean(cv_scores))
-    except Exception:
-        cv_macro_f1 = None
-
     return {
         "model": name,
         "accuracy": round(float(accuracy), 4),
@@ -166,7 +168,6 @@ def evaluate_model(name, pipeline, x_train, x_test, y_train, y_test):
         "weighted_precision": round(float(weighted_precision), 4),
         "weighted_recall": round(float(weighted_recall), 4),
         "weighted_f1": round(float(weighted_f1), 4),
-        "cv_macro_f1": round(cv_macro_f1, 4) if cv_macro_f1 is not None else None,
         "classification_report": classification_report(
             y_test,
             y_pred,
@@ -198,53 +199,20 @@ def save_confusion_matrix(y_test, y_pred, labels):
 
     fig.colorbar(image)
     fig.tight_layout()
-
-    output_path = MODELS_DIR / "confusion_matrix.png"
-    fig.savefig(output_path, dpi=160)
+    fig.savefig(CONFUSION_MATRIX_PATH, dpi=160)
     plt.close(fig)
 
-    return output_path
+    return CONFUSION_MATRIX_PATH
 
 
-def save_decision_tree_plot(best_pipeline, labels):
-    model = best_pipeline.named_steps["model"]
-
-    if not isinstance(model, DecisionTreeClassifier):
-        return None
-
-    preprocessor = best_pipeline.named_steps["preprocessor"]
-    feature_names = preprocessor.get_feature_names_out()
-
-    fig, ax = plt.subplots(figsize=(24, 12))
-
-    plot_tree(
-        model,
-        feature_names=feature_names,
-        class_names=labels,
-        filled=True,
-        rounded=True,
-        fontsize=7,
-        max_depth=3,
-        ax=ax,
-    )
-
-    output_path = MODELS_DIR / "decision_tree_preview.png"
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=160)
-    plt.close(fig)
-
-    return output_path
-
-
-def extract_feature_importance(best_pipeline, top_n=25):
-    model = best_pipeline.named_steps["model"]
+def extract_feature_importance(pipeline, top_n=25):
+    model = pipeline.named_steps["model"]
 
     if not hasattr(model, "feature_importances_"):
         return []
 
-    preprocessor = best_pipeline.named_steps["preprocessor"]
+    preprocessor = pipeline.named_steps["preprocessor"]
     feature_names = preprocessor.get_feature_names_out()
-
     importances = model.feature_importances_
 
     ranked = sorted(
@@ -290,56 +258,51 @@ def main():
     results = []
     fitted_pipelines = {}
 
-    print("🔎 Antrenare modele...\n")
+    print("Antrenare modele...\n")
 
     for name, model in models.items():
-        pipeline = Pipeline(
-            steps=[
-                ("preprocessor", build_preprocessor()),
-                ("model", model),
-            ]
+        pipeline = build_pipeline(model)
+
+        result = evaluate_model(
+            name,
+            pipeline,
+            x_train,
+            x_test,
+            y_train,
+            y_test,
         )
 
-        result = evaluate_model(name, pipeline, x_train, x_test, y_train, y_test)
         results.append(result)
         fitted_pipelines[name] = pipeline
 
         print(
             f"{name}: "
             f"accuracy={result['accuracy']} | "
-            f"macro_f1={result['macro_f1']} | "
-            f"cv_macro_f1={result['cv_macro_f1']}"
+            f"macro_f1={result['macro_f1']}"
         )
 
-    best_result = sorted(
-        results,
-        key=lambda item: (
-            item["macro_f1"],
-            item["accuracy"],
-        ),
-        reverse=True,
-    )[0]
+    if FINAL_MODEL_NAME not in fitted_pipelines:
+        raise ValueError(f"Modelul final {FINAL_MODEL_NAME} nu există.")
 
-    best_model_name = best_result["model"]
-    best_pipeline = fitted_pipelines[best_model_name]
+    final_pipeline = fitted_pipelines[FINAL_MODEL_NAME]
+    final_result = next(
+        result for result in results if result["model"] == FINAL_MODEL_NAME
+    )
 
     labels = sorted(y.unique().tolist())
 
     confusion_matrix_path = save_confusion_matrix(
         y_test,
-        best_result["y_pred"],
+        final_result["y_pred"],
         labels,
     )
 
-    tree_plot_path = save_decision_tree_plot(best_pipeline, labels)
-    feature_importance = extract_feature_importance(best_pipeline)
+    feature_importance = extract_feature_importance(final_pipeline)
 
-    model_path = MODELS_DIR / "job_category_model.pkl"
-    metrics_path = MODELS_DIR / "model_metrics.json"
-
-    joblib.dump(best_pipeline, model_path)
+    joblib.dump(final_pipeline, MODEL_PATH)
 
     clean_results = []
+
     for result in results:
         result_copy = dict(result)
         result_copy.pop("y_pred", None)
@@ -361,42 +324,36 @@ def main():
         "labels": labels,
         "tested_models": clean_results,
         "best_model": {
-            "name": best_model_name,
-            "accuracy": best_result["accuracy"],
-            "macro_precision": best_result["macro_precision"],
-            "macro_recall": best_result["macro_recall"],
-            "macro_f1": best_result["macro_f1"],
-            "weighted_f1": best_result["weighted_f1"],
-            "cv_macro_f1": best_result["cv_macro_f1"],
+            "name": FINAL_MODEL_NAME,
+            "accuracy": final_result["accuracy"],
+            "macro_precision": final_result["macro_precision"],
+            "macro_recall": final_result["macro_recall"],
+            "macro_f1": final_result["macro_f1"],
+            "weighted_f1": final_result["weighted_f1"],
         },
         "feature_importance": feature_importance,
         "artifacts": {
-            "model_path": str(model_path),
-            "metrics_path": str(metrics_path),
+            "model_path": str(MODEL_PATH),
+            "metrics_path": str(METRICS_PATH),
             "confusion_matrix_path": str(confusion_matrix_path),
-            "decision_tree_preview_path": str(tree_plot_path)
-            if tree_plot_path
-            else None,
         },
         "methodology_note": (
-            "Modelul a fost antrenat ca problemă de clasificare multiclasă, "
-            "folosind train/test split, vectorizare TF-IDF pentru text, "
-            "encoding pentru variabile categorice și evaluare prin accuracy, "
-            "precision, recall și F1-score."
+            "Modelul a fost antrenat ca problemă de clasificare multiclasă. "
+            "Descrierile joburilor au fost transformate prin TF-IDF, variabilele "
+            "categorice au fost codificate, iar modelele au fost evaluate prin "
+            "Accuracy, Precision, Recall și F1-score. Modelul final integrat în "
+            "aplicație este Gradient Boosting."
         ),
     }
 
-    with open(metrics_path, "w", encoding="utf-8") as file:
+    with open(METRICS_PATH, "w", encoding="utf-8") as file:
         json.dump(metrics, file, ensure_ascii=False, indent=2)
 
-    print("\n✅ Antrenare finalizată.")
-    print(f"Cel mai bun model: {best_model_name}")
-    print(f"Model salvat în: {model_path}")
-    print(f"Metrici salvate în: {metrics_path}")
-    print(f"Confusion matrix: {confusion_matrix_path}")
-
-    if tree_plot_path:
-        print(f"Arbore decizie preview: {tree_plot_path}")
+    print("\nAntrenare finalizată.")
+    print(f"Model final: {FINAL_MODEL_NAME}")
+    print(f"Model salvat în: {MODEL_PATH}")
+    print(f"Metrici salvate în: {METRICS_PATH}")
+    print(f"Matrice confuzie: {confusion_matrix_path}")
 
 
 if __name__ == "__main__":

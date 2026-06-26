@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const AuthContext = createContext();
 
+const API_URL = "http://localhost:5050/api";
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(
@@ -11,21 +13,21 @@ export function AuthProvider({ children }) {
 
   async function fetchCurrentUser(savedToken) {
     try {
-      const res = await fetch("http://localhost:5050/api/auth/me", {
+      const response = await fetch(`${API_URL}/auth/me`, {
         headers: {
-          Authorization: `Bearer ${savedToken}`,
-        },
+          Authorization: `Bearer ${savedToken}`
+        }
       });
 
-      const data = await res.json();
+      const data = await response.json();
 
-      if (!res.ok) {
-        throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || "Authentication failed");
       }
 
       setUser(data.user);
     } catch (err) {
-      console.error(err);
+      console.error("AUTH ERROR:", err);
 
       localStorage.removeItem("token");
       setToken("");
@@ -65,7 +67,7 @@ export function AuthProvider({ children }) {
         loading,
         login,
         logout,
-        isAuthenticated: !!user,
+        isAuthenticated: Boolean(user)
       }}
     >
       {children}
@@ -74,5 +76,11 @@ export function AuthProvider({ children }) {
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+
+  return context;
 }

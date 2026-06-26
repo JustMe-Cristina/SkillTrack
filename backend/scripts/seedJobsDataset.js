@@ -1,13 +1,3 @@
-/**
- * Seed SkillTrack job dataset into MySQL.
- *
- * Usage from backend root:
- *   DEMO_USER_ID=1 node scripts/seedJobsDataset.js
- *
- * Optional:
- *   DATASET_FILE=data/jobs_seed.json DEMO_USER_ID=1 node scripts/seedJobsDataset.js
- */
-
 const fs = require("fs");
 const path = require("path");
 const db = require("../src/config/db");
@@ -34,13 +24,25 @@ function normalizeSkillName(name) {
     PowerBI: "Power BI",
     "power bi": "Power BI",
     "power-bi": "Power BI",
+
     JS: "JavaScript",
     "React.js": "React",
     ReactJS: "React",
+
     "MS Excel": "Excel",
+
     "SQL databases": "SQL",
+    "SQL Server": "Microsoft SQL Server",
+    MSSQL: "Microsoft SQL Server",
+    "MS SQL Server": "Microsoft SQL Server",
+
     Statistics: "Statistical Analysis",
+
     LLM: "Large Language Models",
+    "Generative AI": "Large Language Models",
+
+    CPP: "C++",
+    "C plus plus": "C++",
   };
 
   return aliases[value] || value;
@@ -188,6 +190,7 @@ async function main() {
     for (const rawSkill of job.skills || []) {
       const skillName = normalizeSkillName(rawSkill);
       const category = inferCategory(skillName, skillCategoryMap);
+
       const skill = await ensureSkill(
         skillName,
         category,
@@ -220,7 +223,6 @@ async function main() {
       meets_experience_requirement: null,
       meets_degree_requirement: null,
 
-      // Sunt inserate doar dacă ai adăugat coloanele opționale.
       external_dataset_id: job.id || null,
       seniority: job.seniority || null,
       category: job.category || null,
@@ -229,6 +231,7 @@ async function main() {
       posted_at: job.posted_at || null,
       source_type: job.source_type || null,
       source_note: job.source_note || null,
+      market_demand: job.market_demand || null,
       difficulty_score: Number(job.difficulty_score) || null,
     };
 
