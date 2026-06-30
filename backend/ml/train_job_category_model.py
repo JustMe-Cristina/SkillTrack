@@ -50,11 +50,10 @@ def load_dataset():
     df = pd.read_csv(DATASET_PATH)
 
     required_columns = [
-        "text_features",
+        "text_features", 
         "work_mode",
         "employment_type",
         "seniority",
-        "difficulty_score",
         "category",
     ]
 
@@ -67,7 +66,6 @@ def load_dataset():
     df["work_mode"] = df["work_mode"].fillna("UNKNOWN")
     df["employment_type"] = df["employment_type"].fillna("UNKNOWN")
     df["seniority"] = df["seniority"].fillna("UNKNOWN")
-    df["difficulty_score"] = df["difficulty_score"].fillna(0)
     df["category"] = df["category"].astype(str)
 
     return df
@@ -92,11 +90,7 @@ def build_preprocessor():
                 OneHotEncoder(handle_unknown="ignore"),
                 ["work_mode", "employment_type", "seniority"],
             ),
-            (
-                "numeric",
-                MinMaxScaler(),
-                ["difficulty_score"],
-            ),
+            
         ]
     )
 
