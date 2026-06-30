@@ -123,22 +123,40 @@ function getRecentTime(value) {
   return `Acum ${diffDays}z`;
 }
 
+function getMonday(date) {
+  const result = new Date(date);
+  const day = result.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+
+  result.setDate(result.getDate() + diff);
+  result.setHours(0, 0, 0, 0);
+
+  return result;
+}
+
 function buildActivityMatrix(jobs, roadmaps) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const totalDays = 70;
+  const numberOfWeeks = 12;
+  const endDate = getMonday(today);
+  endDate.setDate(endDate.getDate() + 6);
+
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - numberOfWeeks * 7 + 1);
+
   const days = [];
 
-  for (let i = totalDays - 1; i >= 0; i -= 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
+  for (let i = 0; i < numberOfWeeks * 7; i += 1) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + i);
 
     days.push({
       date,
       key: getDateKey(date),
       count: 0,
       activities: [],
+      isFuture: date > today,
     });
   }
 
@@ -159,7 +177,7 @@ function buildActivityMatrix(jobs, roadmaps) {
     const key = getDateKey(activity.date);
     const day = days.find((item) => item.key === key);
 
-    if (day) {
+    if (day && !day.isFuture) {
       day.count += 1;
       day.activities.push(activity);
     }
@@ -172,13 +190,14 @@ function buildActivityMatrix(jobs, roadmaps) {
   }
 
   const monthMarkers = weeks.map((week, index) => {
-    const firstDay = week[0]?.date;
+    const firstVisibleDay = week.find((day) => !day.isFuture)?.date;
     const previousWeek = weeks[index - 1];
-    const previousMonth = previousWeek?.[0]?.date?.getMonth();
+    const previousVisibleDay = previousWeek?.find((day) => !day.isFuture)?.date;
 
-    if (!firstDay) return "";
+    if (!firstVisibleDay) return "";
 
-    const currentMonth = firstDay.getMonth();
+    const currentMonth = firstVisibleDay.getMonth();
+    const previousMonth = previousVisibleDay?.getMonth();
 
     if (index === 0 || currentMonth !== previousMonth) {
       return MONTH_LABELS[currentMonth];
@@ -191,10 +210,11 @@ function buildActivityMatrix(jobs, roadmaps) {
 }
 
 function calculateStreak(activityDays) {
+  const validDays = activityDays.filter((day) => !day.isFuture);
   let streak = 0;
 
-  for (let i = activityDays.length - 1; i >= 0; i -= 1) {
-    if (activityDays[i].count > 0) {
+  for (let i = validDays.length - 1; i >= 0; i -= 1) {
+    if (validDays[i].count > 0) {
       streak += 1;
     } else {
       break;
@@ -210,7 +230,8 @@ function formatActiveDays(value) {
   return `${value} zile active`;
 }
 
-function getActivityStyle(count) {
+function getActivityStyle(count, isFuture = false) {
+  if (isFuture) return styles.activityFuture;
   if (count >= 4) return styles.activityVeryHigh;
   if (count >= 3) return styles.activityHigh;
   if (count >= 2) return styles.activityMedium;
@@ -582,14 +603,23 @@ export default function Dashboard() {
                   </div>
 
                   <div style={styles.heatmapOuter}>
+                    <div style={styles.monthLabels}>
+                      <span />
+                      <div style={styles.monthGrid}>
+                        {activity.monthMarkers.map((label, index) => (
+                          <span key={`${label}-${index}`}>{label}</span>
+                        ))}
+                      </div>
+                    </div>
+
                     <div style={styles.githubWrap}>
                       <div style={styles.weekdayLabels}>
                         <span>L</span>
+                        <span />
                         <span>M</span>
-                        <span>M</span>
-                        <span>J</span>
+                        <span />
                         <span>V</span>
-                        <span>S</span>
+                        <span />
                         <span>D</span>
                       </div>
 
@@ -606,7 +636,10 @@ export default function Dashboard() {
                                 <div
                                   style={{
                                     ...styles.githubCell,
-                                    ...getActivityStyle(day.count),
+                                    ...getActivityStyle(
+                                      day.count,
+                                      day.isFuture,
+                                    ),
                                   }}
                                 />
 
@@ -614,7 +647,9 @@ export default function Dashboard() {
                                   <div style={styles.githubTooltip}>
                                     <strong>{formatDate(day.date)}</strong>
 
-                                    {day.count === 0 ? (
+                                    {day.isFuture ? (
+                                      <span>Zi viitoare.</span>
+                                    ) : day.count === 0 ? (
                                       <span>Nu există activitate.</span>
                                     ) : (
                                       <>
@@ -678,6 +713,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </section>
+
                 <section style={styles.card}>
                   <div style={styles.sectionHeader}>
                     <div>
@@ -721,6 +757,7 @@ export default function Dashboard() {
                     />
                   )}
                 </section>
+
                 <section style={styles.focusCard}>
                   <div>
                     <div style={styles.sectionLabelLight}>
@@ -737,7 +774,7 @@ export default function Dashboard() {
                   >
                     Continuă
                   </button>
-                </section>{" "}
+                </section>
               </div>
 
               <div style={styles.rightArea}>
@@ -746,37 +783,39 @@ export default function Dashboard() {
 
                   {stats.bestMatch ? (
                     <button
-  type="button"
-  style={{
-    ...styles.bestMatchCard,
-    ...(hoveredStat === "bestMatch" ? styles.bestMatchCardHover : {}),
-  }}
-  onMouseEnter={() => setHoveredStat("bestMatch")}
-  onMouseLeave={() => setHoveredStat(null)}
-  onClick={() =>
-    navigate(`/joburi-urmarite/${stats.bestMatch.id}`)
-  }
->
-  <div style={styles.bestMatchContent}>
-    <strong>{stats.bestMatch.title}</strong>
-    <p>{stats.bestMatch.company || "Companie necunoscută"}</p>
+                      type="button"
+                      style={{
+                        ...styles.bestMatchCard,
+                        ...(hoveredStat === "bestMatch"
+                          ? styles.bestMatchCardHover
+                          : {}),
+                      }}
+                      onMouseEnter={() => setHoveredStat("bestMatch")}
+                      onMouseLeave={() => setHoveredStat(null)}
+                      onClick={() =>
+                        navigate(`/joburi-urmarite/${stats.bestMatch.id}`)
+                      }
+                    >
+                      <div style={styles.bestMatchContent}>
+                        <strong>{stats.bestMatch.title}</strong>
+                        <p>{stats.bestMatch.company || "Companie necunoscută"}</p>
 
-    <span style={styles.statusText}>
-      {STATUS_LABELS[stats.bestMatch.status] ||
-        stats.bestMatch.status ||
-        "Salvat"}
-    </span>
-  </div>
+                        <span style={styles.statusText}>
+                          {STATUS_LABELS[stats.bestMatch.status] ||
+                            stats.bestMatch.status ||
+                            "Salvat"}
+                        </span>
+                      </div>
 
-  <div
-    style={{
-      ...styles.bestScorePill,
-      ...getScoreTone(stats.bestMatch.match_score),
-    }}
-  >
-    {stats.bestMatch.match_score || 0}% match
-  </div>
-</button>
+                      <div
+                        style={{
+                          ...styles.bestScorePill,
+                          ...getScoreTone(stats.bestMatch.match_score),
+                        }}
+                      >
+                        {stats.bestMatch.match_score || 0}% match
+                      </div>
+                    </button>
                   ) : (
                     <StareGoala
                       title="Nu ai joburi salvate"
@@ -903,16 +942,6 @@ const styles = {
     fontSize: 13,
     fontWeight: 800,
     boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
-  },
-
-  reloadButton: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid #bfdbfe",
-    background: "#eff6ff",
-    color: "#1d4ed8",
-    cursor: "pointer",
-    fontWeight: 800,
   },
 
   muted: {
@@ -1097,7 +1126,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: 12,
-    marginBottom: 10,
+    marginBottom: 8,
   },
 
   sectionLabel: {
@@ -1136,51 +1165,74 @@ const styles = {
     width: "fit-content",
     maxWidth: "100%",
     overflowX: "auto",
+    paddingTop: 2,
+  },
+
+  monthLabels: {
+    display: "grid",
+    gridTemplateColumns: "24px 1fr",
+    gap: 8,
+    marginBottom: 5,
+  },
+
+  monthGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(12, 16px)",
+    gap: 4,
+    minWidth: "fit-content",
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: "12px",
   },
 
   githubWrap: {
     display: "grid",
-    gridTemplateColumns: "20px 1fr",
-    gap: 6,
+    gridTemplateColumns: "24px 1fr",
+    gap: 8,
     alignItems: "start",
   },
 
   weekdayLabels: {
     display: "grid",
-    gridTemplateRows: "repeat(7, 12px)",
-    gap: 3,
+    gridTemplateRows: "repeat(7, 16px)",
+    gap: 4,
     color: "#64748b",
     fontSize: 10,
-    lineHeight: "12px",
+    fontWeight: 800,
+    lineHeight: "16px",
+    textAlign: "center",
   },
 
   githubGrid: {
     display: "flex",
-    gap: 3,
+    gap: 4,
   },
 
   githubWeek: {
     display: "grid",
-    gridTemplateRows: "repeat(7, 12px)",
-    gap: 3,
+    gridTemplateRows: "repeat(7, 16px)",
+    gap: 4,
   },
 
   githubCellWrap: {
     position: "relative",
-    width: 12,
-    height: 12,
+    width: 16,
+    height: 16,
   },
 
   githubCell: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
+    width: 16,
+    height: 16,
+    borderRadius: 4,
     border: "1px solid rgba(27,31,36,0.06)",
+    boxSizing: "border-box",
+    transition: "transform 0.12s ease, box-shadow 0.12s ease",
   },
 
   githubTooltip: {
     position: "absolute",
-    bottom: "22px",
+    bottom: "26px",
     left: "50%",
     transform: "translateX(-50%)",
     width: 250,
@@ -1206,6 +1258,11 @@ const styles = {
     background: "#ebedf0",
   },
 
+  activityFuture: {
+    background: "#f8fafc",
+    opacity: 0.45,
+  },
+
   activityLow: {
     background: "#9be9a8",
   },
@@ -1227,13 +1284,15 @@ const styles = {
     alignItems: "center",
     gap: 7,
     marginTop: 12,
+    paddingLeft: 32,
     color: "#94a3b8",
     fontSize: 11,
+    fontWeight: 800,
   },
 
   legendDot: {
-    width: 10,
-    height: 10,
+    width: 12,
+    height: 12,
     borderRadius: 3,
   },
 
@@ -1303,17 +1362,6 @@ const styles = {
     whiteSpace: "nowrap",
   },
 
-  smallButtonDark: {
-    marginTop: 12,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontWeight: 800,
-  },
-
   gapCompactCard: {
     background: "#ffffff",
     borderRadius: 18,
@@ -1350,54 +1398,27 @@ const styles = {
     fontWeight: 900,
   },
 
-  focusSkillBox: {
+  bestMatchCard: {
+    width: "100%",
+    textAlign: "left",
     display: "grid",
-    gap: 8,
-    padding: 14,
+    gridTemplateColumns: "1fr auto",
+    alignItems: "center",
+    gap: 12,
+    padding: "13px 14px",
     borderRadius: 16,
     background: "#f8fafc",
-    border: "1px solid #e5e7eb",
-    color: "#475569",
-    lineHeight: 1.55,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    border: "1px solid rgba(148,163,184,0.16)",
+    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.04)",
   },
 
-  focusSkillTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
+  bestMatchCardHover: {
+    transform: "translateY(-3px) scale(1.01)",
+    borderColor: "#4f46e5",
+    boxShadow: "0 18px 42px rgba(79, 70, 229, 0.16)",
   },
-
-  focusSkillMetric: {
-    padding: "8px 10px",
-    borderRadius: 12,
-    background: "#eef2ff",
-    color: "#3730a3",
-    fontSize: 13,
-    fontWeight: 800,
-  },
-
-  bestMatchCard: {
-  width: "100%",
-  textAlign: "left",
-  display: "grid",
-  gridTemplateColumns: "1fr auto",
-  alignItems: "center",
-  gap: 12,
-  padding: "13px 14px",
-  borderRadius: 16,
-  background: "#f8fafc",
-  cursor: "pointer",
-  transition: "all 0.2s ease",
-  border: "1px solid rgba(148,163,184,0.16)",
-  boxShadow: "0 10px 28px rgba(15, 23, 42, 0.04)",
-},
-
-bestMatchCardHover: {
-  transform: "translateY(-3px) scale(1.01)",
-  borderColor: "#4f46e5",
-  boxShadow: "0 18px 42px rgba(79, 70, 229, 0.16)",
-},
 
   bestMatchContent: {
     display: "flex",

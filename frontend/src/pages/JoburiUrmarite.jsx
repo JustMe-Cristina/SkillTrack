@@ -343,7 +343,7 @@ export default function JoburiUrmarite() {
             </div>
 
             <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Categorie ML</label>
+              <label style={styles.filterLabel}>Categorie</label>
               <select
                 style={styles.select}
                 value={mlFilter}

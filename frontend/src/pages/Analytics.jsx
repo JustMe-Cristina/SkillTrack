@@ -307,26 +307,7 @@ export default function Analytics() {
               )}
             </Section>
 
-            <Section
-              title="Categorii de joburi"
-              description="Arată zonele profesionale cele mai analizate în SkillTrack."
-            >
-              {categoryChartData.length === 0 ? (
-                <StareGoala title="Fără categorii" message="Nu există categorii detectate pentru joburi." />
-              ) : (
-                <div style={styles.chartBox}>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={categoryChartData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                      <YAxis allowDecimals={false} />
-                      <Tooltip />
-                      <Bar dataKey="total" name="Joburi" fill="#2563eb" radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </Section>
+            
           </div>
 
           <div style={styles.twoColumns}>

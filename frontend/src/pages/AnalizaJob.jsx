@@ -359,8 +359,6 @@ export default function AnalizaJob() {
         </div>
 
         <p style={styles.mlText}>
-          Modelul <strong>{mlPrediction.model || "ML"}</strong> a estimat că
-          acest job aparține categoriei{" "}
           <strong>{mlPrediction.predictedCategory}</strong>.
         </p>
 
@@ -369,23 +367,7 @@ export default function AnalizaJob() {
           <p>{buildMlExplanation()}</p>
         </div>
 
-        <div style={styles.mlMetaGrid}>
-          <div style={styles.mlMetaCard}>
-            <span>Problemă</span>
-            <strong>{mlPrediction.problemType || "multiclass_classification"}</strong>
-          </div>
-
-          <div style={styles.mlMetaCard}>
-            <span>Target</span>
-            <strong>{mlPrediction.target || "category"}</strong>
-          </div>
-
-          <div style={styles.mlMetaCard}>
-            <span>Model</span>
-            <strong>{mlPrediction.model || "Model ML"}</strong>
-          </div>
-        </div>
-
+          
         {mlPrediction.probabilities?.length > 0 && (
           <div style={styles.probabilityList}>
             {mlPrediction.probabilities.slice(0, 5).map((item) => {

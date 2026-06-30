@@ -318,8 +318,6 @@ export default function Autentificare() {
               </label>
 
               <div style={styles.formMetaRow}>
-                <span style={styles.smallMuted}>Sesiune securizată cu token JWT</span>
-
                 <button
                   type="button"
                   style={styles.linkButton}

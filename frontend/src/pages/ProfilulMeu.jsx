@@ -980,23 +980,7 @@ export default function ProfilulMeu() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                style={styles.directionActionBox}
-                onClick={() => navigate(recommendation.route)}
-              >
-                <div style={styles.sectionLabelLight}>Next best action</div>
 
-                <h3 style={styles.directionActionTitle}>
-                  {recommendation.title}
-                </h3>
-
-                <p style={styles.directionActionText}>{recommendation.text}</p>
-
-                <span style={styles.directionActionButtonText}>
-                  {recommendation.action}
-                </span>
-              </button>
             </section>
 
             <section style={styles.reportCard}>
@@ -1372,7 +1356,7 @@ const styles = {
   },
 
   deleteAccountButton: {
-    padding: "10px 14px",
+    padding: "11px 15px",
     borderRadius: 12,
     border: "none",
     background: "#dc2626",

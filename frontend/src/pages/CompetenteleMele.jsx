@@ -7,7 +7,6 @@ const CATEGORY_COLORS = {
   Data: "#3b82f6",
   BI: "#0ea5e9",
   ML: "#8b5cf6",
-  "AI / ML": "#8b5cf6",
   AI_ML: "#8b5cf6",
   DevOps: "#f59e0b",
   Dev: "#10b981",
@@ -17,7 +16,6 @@ const CATEGORY_COLORS = {
   PM: "#f97316",
   QA: "#6366f1",
   Tools: "#64748b",
-  "Soft Skills": "#ec4899",
   Altele: "#6b7280"
 };
 

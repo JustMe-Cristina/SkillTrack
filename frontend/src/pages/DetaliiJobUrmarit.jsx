@@ -739,7 +739,7 @@ export default function DetaliiJobUrmarit() {
         />
 
         <InfoCard
-          label="Categorie ML"
+          label="Categorie"
           value={
             CATEGORY_LABELS[job.ml_predicted_category] ||
             job.ml_predicted_category ||
