@@ -70,7 +70,6 @@ def load_dataset():
 
     return df
 
-
 def build_preprocessor():
     return ColumnTransformer(
         transformers=[

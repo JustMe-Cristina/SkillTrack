@@ -87,7 +87,7 @@ function buildMatchesAndGaps(requiredSkills, userSkills) {
       gaps.push(item);
     }
   }
-
+  
   return {
     matches,
     gaps
