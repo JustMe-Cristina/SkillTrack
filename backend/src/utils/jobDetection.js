@@ -74,7 +74,9 @@ function detectLocation(description) {
     { keywords: ["amsterdam"], value: "Amsterdam" },
     { keywords: ["london"], value: "Londra" },
     { keywords: ["munich", "münchen"], value: "Munchen" },
-    { keywords: ["dublin"], value: "Dublin" }
+    { keywords: ["dublin"], value: "Dublin" },
+    { keywords: ["madrid"], value: "Madrid" }
+
   ];
 
   for (const city of cityMap) {

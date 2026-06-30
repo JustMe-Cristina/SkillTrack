@@ -86,7 +86,7 @@ export default function LandingPage() {
           <div style={styles.trustRow}>
             <span>Analiză joburi</span>
             <span>ML</span>
-            <span>XAI</span>
+            <span>Explicații</span>
             <span>CV parsing</span>
             <span>Roadmaps</span>
           </div>
@@ -151,12 +151,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section style={styles.statsStrip}>
-        <StatItem value="6+" label="module integrate" />
-        <StatItem value="ML" label="clasificare joburi" />
-        <StatItem value="XAI" label="explicații locale" />
-        <StatItem value="PDF" label="raport profil" />
-      </section>
 
       <section
         id="cum-functioneaza"
@@ -231,7 +225,7 @@ export default function LandingPage() {
 
           <FeatureCard
             icon="🔎"
-            title="Explicații XAI"
+            title="Explicații locale"
             text="Vezi ce skilluri influențează scorul și recomandările."
           />
 
@@ -611,7 +605,7 @@ const styles = {
     width: "62%",
     height: "100%",
     background:
-      "linear-gradient(90deg, #378ADD, #1D9E75)",
+      "linear-gradient(90deg, #378ADD, #1c9770)",
   },
 
   statsStrip: {
